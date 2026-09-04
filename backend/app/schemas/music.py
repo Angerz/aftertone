@@ -9,7 +9,7 @@ from app.models.music import ReleaseType
 
 
 class APIModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_encoders={Decimal: float})
 
 
 class TrackCreate(APIModel):

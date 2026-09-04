@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.imports.pre_formula import PreFormulaError, parse_pre_formula
+from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
 from app.models.music import Album, LegacyRating, ReleaseType
 from app.ratings.calculator import TrackScore, calculate_rating
 
@@ -75,8 +75,23 @@ class LegacyPreviewRow:
 
 
 def _column_map(values: tuple[object, ...]) -> dict[str, int]:
-    aliases = {"ALBUM": "title", "ARTISTA": "artist", "ANO": "year", "DECADA": "decade", "GENERO": "genre", "CALIFICACION": "final", "PRECALIFICACION": "pre", "COHERENCIA": "coherence", "MALAEXP": "bad", "EMOCION": "emotion"}
+    aliases = {"ALBUM": "title", "ARTISTA": "artist", "ANO": "year", "DECADA": "decade", "GENERO": "genre", "PRECALIFICACION": "pre", "COHERENCIA": "coherence", "MALAEXP": "bad", "EMOCION": "emotion"}
     return {aliases[key]: index for index, value in enumerate(values) if (key := _header(value)) in aliases}
+
+
+def _blank(value: object) -> bool:
+    return value is None or not str(value).strip()
+
+
+def _text(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, Decimal) and value == value.to_integral_value():
+        return str(int(value))
+    text = str(value).strip()
+    return text or None
 
 
 def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
@@ -98,33 +113,57 @@ def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
             continue
         row = LegacyPreviewRow(row_number=row_number)
         try:
-            row.title = str(values[columns["title"]] or "").strip() or None
-            row.artist = str(values[columns["artist"]] or "").strip() or None
+            row.title = _text(values[columns["title"]])
+            row.artist = _text(values[columns["artist"]])
             if not row.title or not row.artist:
                 raise ValueError("Album and artist are required.")
             row.year = int(_decimal(values[columns["year"]], "Year", required=False)) if columns.get("year") is not None and values[columns["year"]] not in (None, "") else None
             row.decade = str(values[columns["decade"]]).strip() if columns.get("decade") is not None and values[columns["decade"]] else None
             row.genre = str(values[columns["genre"]]).strip() if columns.get("genre") is not None and values[columns["genre"]] else None
+            rating_values = [values[columns["pre"]], values[columns["coherence"]], values[columns["emotion"]]]
+            if columns.get("bad") is not None:
+                rating_values.append(values[columns["bad"]])
+            if all(_blank(value) for value in rating_values):
+                row.status = "unrated"
+                key = (row.artist.casefold(), row.title.casefold())
+                if key in seen or session.scalar(select(Album.id).where(func.lower(Album.title) == row.title.casefold(), func.lower(Album.artist) == row.artist.casefold())) is not None:
+                    row.warn("An album with this artist and title already exists.")
+                seen.add(key)
+                rows.append(row)
+                continue
             row.pre_formula = str(values[columns["pre"]] or "").strip()
-            row.extracted_scores, _ = parse_pre_formula(row.pre_formula)
-            row.legacy_final_rating = _decimal(values[columns["final"]], "Legacy final rating", required=False) if columns.get("final") is not None else None
-            cached_value = cached_rows[row_number][columns["pre"]]
-            row.legacy_pre_rating = _decimal(cached_value, "Legacy PRE", required=False)
-            if row.legacy_pre_rating is None:
-                row.warn("Cached PRE value is unavailable; formula-derived PRE will be retained for audit.")
-            row.legacy_bad_experience = _bad_experience(values[columns["bad"]]) if columns.get("bad") is not None else None
+            row.extracted_scores, denominator, suffix = parse_pre_formula(row.pre_formula)
             row.coherence = _decimal(values[columns["coherence"]], "Coherence")
             row.emotion = _decimal(values[columns["emotion"]], "Emotion")
             result = calculate_rating([TrackScore(score) for score in row.extracted_scores], coherence=row.coherence, emotion=row.emotion)
             row.computed_pre_rating, row.computed_bad_experience, row.computed_final_rating = result.pre_rating, result.bad_experience, result.final_rating
+            if denominator != len(row.extracted_scores):
+                row.warn(f"Legacy PRE denominator ({denominator}) differs from extracted score count ({len(row.extracted_scores)}). Aftertone uses the extracted scores for canonical computation.")
+            adjustment = legacy_adjustment_value(suffix)
+            if adjustment:
+                row.warn(f"Legacy PRE formula contains a manual adjustment ({adjustment:+f}). Aftertone does not apply it to canonical computation.")
+            cached_value = cached_rows[row_number][columns["pre"]]
+            try:
+                row.legacy_pre_rating = _decimal(cached_value, "Legacy PRE", required=False)
+            except ValueError:
+                row.warn("Legacy PRE could not be read; formula-derived PRE will be retained for audit.")
+            else:
+                if row.legacy_pre_rating is None:
+                    row.warn("Cached PRE value is unavailable; formula-derived PRE will be retained for audit.")
+            if columns.get("bad") is not None:
+                try:
+                    row.legacy_bad_experience = _bad_experience(values[columns["bad"]])
+                except ValueError:
+                    row.warn("Legacy bad experience could not be read; Aftertone will use the computed value.")
+                else:
+                    if row.legacy_bad_experience is None:
+                        row.warn("Legacy bad experience could not be read; Aftertone will use the computed value.")
             if row.year is None:
                 row.warn("Year is missing.")
             if row.legacy_pre_rating is not None and abs(row.legacy_pre_rating - row.computed_pre_rating) > TOLERANCE:
                 row.warn("Legacy PRE differs from the computed PRE.")
             if row.legacy_bad_experience is not None and abs(row.legacy_bad_experience - row.computed_bad_experience) > TOLERANCE:
                 row.warn("Legacy bad experience differs from the computed value.")
-            if row.legacy_final_rating is not None and abs(row.legacy_final_rating - row.computed_final_rating) > TOLERANCE:
-                row.warn("Legacy final rating differs from the computed final rating.")
             key = (row.artist.casefold(), row.title.casefold())
             if key in seen or session.scalar(select(Album.id).where(func.lower(Album.title) == row.title.casefold(), func.lower(Album.artist) == row.artist.casefold())) is not None:
                 row.warn("An album with this artist and title already exists.")
@@ -142,12 +181,17 @@ def commit_rows(rows: list[LegacyPreviewRow], selected_row_numbers: set[int], se
             skipped += 1
             continue
         try:
-            if not row.title or not row.artist or row.coherence is None or row.emotion is None or not row.pre_formula:
+            if not row.title or not row.artist:
                 raise ValueError("Row is incomplete.")
             if session.scalar(select(Album.id).where(func.lower(Album.title) == row.title.casefold(), func.lower(Album.artist) == row.artist.casefold())) is not None:
                 skipped += 1
                 continue
             album = Album(title=row.title, artist=row.artist, release_year=row.year, release_type=ReleaseType.ALBUM)
+            if row.status == "unrated":
+                session.add(album); session.commit(); imported += 1
+                continue
+            if row.coherence is None or row.emotion is None or not row.pre_formula:
+                raise ValueError("Row is incomplete.")
             legacy = LegacyRating(album=album, legacy_final_rating=row.legacy_final_rating, legacy_pre_rating=row.legacy_pre_rating, legacy_bad_experience=row.legacy_bad_experience, coherence=row.coherence, emotion=row.emotion, extracted_scores=[str(score) for score in row.extracted_scores], pre_formula=row.pre_formula, computed_pre_rating=row.computed_pre_rating, computed_bad_experience=row.computed_bad_experience, computed_final_rating=row.computed_final_rating, legacy_decade=row.decade, legacy_genre=row.genre)
             session.add_all([album, legacy]); session.commit(); imported += 1
         except Exception:

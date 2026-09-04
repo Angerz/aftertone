@@ -12,17 +12,18 @@ TEST_COVER_DIR = Path(tempfile.mkdtemp(prefix="aftertone-cover-test-"))
 os.environ["AFTERTONE_COVER_DIR"] = str(TEST_COVER_DIR)
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from fastapi import HTTPException, UploadFile
+from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import ValidationError
 from starlette.datastructures import Headers
 
 from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
-from app.imports.legacy_excel import commit_rows, preview_workbook
-from app.imports.pre_formula import PreFormulaError, parse_pre_formula
-from app.main import clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, mark_for_revisit, upload_cover
+from app.imports.legacy_excel import _text, commit_rows, preview_workbook
+from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
+from app.main import app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, mark_for_revisit, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.models.music import Album, LegacyRating, Track
 from app.schemas.music import AlbumCreate, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate
@@ -97,6 +98,26 @@ def test_album_list_includes_only_the_latest_revision_summary() -> None:
     assert latest.id != first.id
     assert latest.pre_rating == second.pre_rating
     assert latest.final_rating == second.final_rating
+
+
+def test_album_list_serializes_rating_decimals_as_json_numbers() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        session.add(LegacyRating(
+            album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"),
+            extracted_scores=["10", "9"], pre_formula="=(10+9)/2",
+            legacy_final_rating=Decimal("8.5"), computed_final_rating=Decimal("8.75"),
+        ))
+        session.commit()
+    with TestClient(app) as client:
+        response = client.get("/api/albums")
+    assert response.status_code == 200
+    payload = response.json()[0]
+    assert isinstance(payload["latest_revision"]["pre_rating"], float)
+    assert isinstance(payload["latest_revision"]["final_rating"], float)
+    assert isinstance(payload["latest_legacy_rating"]["legacy_final_rating"], float)
+    assert isinstance(payload["latest_legacy_rating"]["computed_final_rating"], float)
 
 
 def test_create_and_read_complete_calculated_revision() -> None:
@@ -246,12 +267,20 @@ def test_replace_and_delete_cover_removes_old_file() -> None:
 
 
 def test_legacy_pre_formula_parses_decimal_comma_and_audits_grace() -> None:
-    scores, denominator = parse_pre_formula("=(10+10+10+10+10+10+10+10+9,5+10+10)/11")
+    scores, denominator, suffix = parse_pre_formula("=(10+10+10+10+10+10+10+10+9,5+10+10)/11")
     assert denominator == 11
     assert scores[8] == Decimal("9.5")
     assert len(scores) == 11
+    assert suffix == ""
+    zero_scores, zero_denominator, zero_suffix = parse_pre_formula("=(10+9.5+8)/3+0-0")
+    assert (zero_scores, zero_denominator, zero_suffix) == ([Decimal("10"), Decimal("9.5"), Decimal("8")], 3, "+0-0")
+    positive_scores, positive_denominator, positive_suffix = parse_pre_formula("=(10+9,5+8)/3+0,1-0")
+    assert (positive_scores, positive_denominator, positive_suffix) == ([Decimal("10"), Decimal("9.5"), Decimal("8")], 3, "+0,1-0")
+    assert legacy_adjustment_value(positive_suffix) == Decimal("0.1")
     with pytest.raises(PreFormulaError):
         parse_pre_formula("=AVERAGE(10,9)")
+    with pytest.raises(PreFormulaError):
+        parse_pre_formula("=(10+9+8)/3+A1")
 
 
 def test_legacy_preview_marks_audit_discrepancies_as_warnings() -> None:
@@ -259,13 +288,70 @@ def test_legacy_preview_marks_audit_discrepancies_as_warnings() -> None:
 
     workbook = Workbook(); sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "AÑO", "CALIFICACIÓN", None, "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
-    sheet.append(["Grace", "Jeff Buckley", 1994, 1, None, "=(10+9,5+10)/3", 7, 0, 10])
+    sheet.append(["Grace", "Jeff Buckley", 1994, "=F2+0.1", None, "=(10+4)/2", 7, 0, 10])
     data = BytesIO(); workbook.save(data)
     with SessionLocal() as session:
         preview = preview_workbook(data.getvalue(), session)
+        imported, skipped, failed = commit_rows(preview, {2}, session)
+        legacy = session.scalar(select(LegacyRating))
     assert preview[0].status == "warning"
-    assert preview[0].computed_pre_rating == Decimal("9.833333333333333333333333333")
-    assert any("final rating differs" in warning for warning in preview[0].warnings)
+    assert (imported, skipped, failed) == (1, 0, 0)
+    assert legacy is not None
+    assert preview[0].legacy_final_rating is None
+    assert legacy.legacy_final_rating is None
+    assert preview[0].computed_final_rating == calculate_rating(
+        [TrackScore(Decimal("10")), TrackScore(Decimal("4"))], coherence=Decimal("7"), emotion=Decimal("10")
+    ).final_rating
+    assert any("Legacy bad experience differs" in warning for warning in preview[0].warnings)
+
+
+def test_legacy_preview_accepts_post_average_adjustments_without_using_them() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "EMOCIÓN"])
+    sheet.append(["Comfort y Música Para Volar [Live]", "Soda Stereo", "=(10+9.6+8.3+10+10+9.5+10+8.1+8.7+8.4+8.1)/11+0-0", 7, 10])
+    sheet.append(["Soviet Kitsch", "Regina Spektor", "=(8.3+7.5+9.2+9.9+8.7+8.9+8.8+8.9+9.1+8.6)/10+0.1-0", 7, 10])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        preview = preview_workbook(data.getvalue(), session)
+    neutral, adjusted = preview
+    assert len(neutral.extracted_scores) == 11
+    assert neutral.computed_pre_rating == sum(neutral.extracted_scores) / Decimal("11")
+    assert not any("legacy adjustment" in warning for warning in neutral.warnings)
+    assert len(adjusted.extracted_scores) == 10
+    assert adjusted.computed_pre_rating == sum(adjusted.extracted_scores) / Decimal("10")
+    assert adjusted.status == "warning"
+    assert any("manual adjustment (+0.1)" in warning for warning in adjusted.warnings)
+
+
+def test_legacy_preview_uses_scores_when_pre_denominator_does_not_match() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "EMOCIÓN"])
+    sheet.append(["SMITHEREENS", "Joji", "=(9.4+6.8+9.3+7.5+6.6+5.5+4.1+6.5+5.4)/8+0-0.25", 7, 8])
+    sheet.append(["Temporada de reggaetón", "Bad Bunny", "=(7.2+1.8+4.2+8.2+8.1+6.2+5)/6", 7, 8])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        preview = preview_workbook(data.getvalue(), session)
+    smithereens, temporada = preview
+    assert len(smithereens.extracted_scores) == 9
+    assert smithereens.status == "warning"
+    assert smithereens.computed_pre_rating == sum(smithereens.extracted_scores) / Decimal("9")
+    assert smithereens.computed_final_rating is not None
+    assert any("denominator (8) differs from extracted score count (9)" in warning for warning in smithereens.warnings)
+    assert any("manual adjustment (-0.25)" in warning for warning in smithereens.warnings)
+    assert len(temporada.extracted_scores) == 7
+    assert temporada.status == "warning"
+    assert temporada.computed_pre_rating == sum(temporada.extracted_scores) / Decimal("7")
+    assert temporada.computed_final_rating is not None
+    assert any("denominator (6) differs from extracted score count (7)" in warning for warning in temporada.warnings)
+
+
+def test_legacy_pre_formula_rejects_out_of_range_scores() -> None:
+    with pytest.raises(PreFormulaError, match="scores must be between 0 and 10"):
+        parse_pre_formula("=(11+8)/2")
 
 
 def test_legacy_commit_creates_no_tracks_or_rating_revision() -> None:
@@ -285,9 +371,104 @@ def test_legacy_commit_creates_no_tracks_or_rating_revision() -> None:
     assert (imported, skipped, failed) == (1, 0, 0)
     assert legacy is not None
     assert legacy.extracted_scores == ["10", "9.5"]
+    assert legacy.legacy_final_rating is None
+    assert legacy.computed_final_rating == calculate_rating(
+        [TrackScore(Decimal("10")), TrackScore(Decimal("9.5"))], coherence=Decimal("7"), emotion=Decimal("8")
+    ).final_rating
     assert album is not None
     assert track_count == 0
     assert revision_count == 0
+
+
+def test_legacy_unrated_album_creates_only_an_album_and_respects_duplicates() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "AÑO", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    sheet.append(["Entertainment", "Gang Of Four", 1979, None, None, None, None])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        rows = preview_workbook(data.getvalue(), session)
+        imported, skipped, failed = commit_rows(rows, {2}, session)
+        album = session.scalar(select(Album).where(Album.title == "Entertainment"))
+        legacy_count = session.scalar(select(func.count(LegacyRating.id)))
+        duplicate = preview_workbook(data.getvalue(), session)[0]
+        duplicate_result = commit_rows([duplicate], {2}, session)
+    assert rows[0].status == "unrated"
+    assert rows[0].computed_final_rating is None
+    assert (imported, skipped, failed) == (1, 0, 0)
+    assert album is not None
+    assert legacy_count == 0
+    assert duplicate.status == "unrated"
+    assert any("already exists" in warning for warning in duplicate.warnings)
+    assert duplicate_result == (0, 1, 0)
+
+
+@pytest.mark.parametrize(("title", "expected_status"), [(0, "unrated"), (0.0, "unrated"), ("0", "unrated"), (None, "error"), ("   ", "error")])
+def test_legacy_title_normalization_preserves_numeric_zero(title: object, expected_status: str) -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    sheet.append([title, "Ichiko Aoba", None, None, None, None])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        row = preview_workbook(data.getvalue(), session)[0]
+    assert row.status == expected_status
+    if expected_status == "unrated":
+        assert row.title == "0"
+    else:
+        assert "Album and artist are required" in row.errors
+
+
+@pytest.mark.parametrize(("value", "expected"), [(0.0, "0"), (12.0, "12"), (1.5, "1.5"), ("0", "0"), (None, None), ("   ", None)])
+def test_legacy_text_normalization_removes_only_integer_float_suffix(value: object, expected: str | None) -> None:
+    assert _text(value) == expected
+
+
+def test_legacy_partial_rating_is_not_classified_as_unrated() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    sheet.append(["Partial", "Artist", "=(10+9)/2", None, None, 8])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        row = preview_workbook(data.getvalue(), session)[0]
+    assert row.status == "error"
+    assert any("Coherence is required" in error for error in row.errors)
+
+
+def test_legacy_preview_computes_grace_final_from_pre_formula_without_final_column() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    sheet.append(["Grace", "Jeff Buckley", "=(10+10+10+10+10+10+10+10+9.5+10+10)/11", 7, 0, 10])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        preview = preview_workbook(data.getvalue(), session)
+    assert preview[0].computed_pre_rating == Decimal("9.954545454545454545454545455")
+    assert preview[0].computed_bad_experience == Decimal("0")
+    assert float(preview[0].computed_final_rating) == pytest.approx(10.202045455)
+
+
+def test_legacy_audit_bad_experience_that_cannot_be_read_is_a_warning() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    sheet.append(["Promises", "Floating Points", "=(9.7+8.7+7.3+8.4+9.8+7+6.2+6.6+9.9+8+9.8+8.1)/12", 7, "not cached", 9])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        preview = preview_workbook(data.getvalue(), session)
+    row = preview[0]
+    assert row.status == "warning"
+    assert not row.errors
+    assert row.computed_pre_rating is not None
+    assert row.computed_bad_experience is not None
+    assert row.computed_final_rating is not None
+    assert any("Aftertone will use the computed value" in warning for warning in row.warnings)
 
 
 def test_revisit_mark_is_current_album_state_and_survives_new_revision() -> None:
