@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
-from app.config import web_origin
+from app.config import cover_dir, web_origin
 from app.models.music import Album, RatingRevision, Track
 from app.schemas.music import (
     AlbumCreate,
@@ -21,6 +22,7 @@ from app.schemas.music import (
     TrackResponse,
 )
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
+from app.services.covers import CoverError, remove_cover_file, save_cover
 
 app = FastAPI(title="Aftertone API", version="0.1.0")
 app.add_middleware(
@@ -30,6 +32,8 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+cover_dir().mkdir(parents=True, exist_ok=True)
+app.mount("/media/covers", StaticFiles(directory=cover_dir()), name="covers")
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -49,6 +53,7 @@ def album_response(album: Album, latest_revision: RatingRevision | None = None) 
             id=latest_revision.id, created_at=latest_revision.created_at,
             pre_rating=latest_revision.pre_rating, final_rating=latest_revision.final_rating,
         ) if latest_revision else None,
+        cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
     )
 
 
@@ -117,6 +122,51 @@ def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumRe
     if album is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
     album.tracks.sort(key=lambda track: track.position)
+    return album_response(album)
+
+
+def album_with_tracks(album_id: int, session: Session) -> Album:
+    album = session.scalar(select(Album).options(selectinload(Album.tracks)).where(Album.id == album_id))
+    if album is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
+    album.tracks.sort(key=lambda track: track.position)
+    return album
+
+
+@app.put("/api/albums/{album_id}/cover", response_model=AlbumResponse, tags=["albums"])
+def upload_cover(album_id: int, file: UploadFile = File(...), session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    try:
+        filename = save_cover(file)
+    except CoverError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    finally:
+        file.file.close()
+    old_filename = album.cover_filename
+    album.cover_filename = filename
+    try:
+        session.commit()
+        session.refresh(album)
+    except Exception:
+        session.rollback()
+        remove_cover_file(filename)
+        raise
+    remove_cover_file(old_filename)
+    return album_response(album)
+
+
+@app.delete("/api/albums/{album_id}/cover", response_model=AlbumResponse, tags=["albums"])
+def delete_cover(album_id: int, session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    old_filename = album.cover_filename
+    album.cover_filename = None
+    try:
+        session.commit()
+        session.refresh(album)
+    except Exception:
+        session.rollback()
+        raise
+    remove_cover_file(old_filename)
     return album_response(album)
 
 

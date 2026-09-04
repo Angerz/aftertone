@@ -4,7 +4,7 @@ export interface Track { id: number; position: number; title: string }
 export interface LatestRevision { id: number; created_at: string; pre_rating: number | null; final_rating: number | null }
 export interface Album {
   id: number; title: string; artist: string; year: number | null;
-  release_type: ReleaseType; created_at: string; tracks: Track[]; latest_revision: LatestRevision | null;
+  release_type: ReleaseType; created_at: string; tracks: Track[]; latest_revision: LatestRevision | null; cover_url: string | null;
 }
 export interface TrackCreate { position: number; title: string }
 export interface AlbumCreate { title: string; artist: string; year: number | null; release_type: ReleaseType; tracks: TrackCreate[] }
