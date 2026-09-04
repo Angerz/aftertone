@@ -12,6 +12,7 @@ TEST_COVER_DIR = Path(tempfile.mkdtemp(prefix="aftertone-cover-test-"))
 os.environ["AFTERTONE_COVER_DIR"] = str(TEST_COVER_DIR)
 
 import pytest
+from sqlalchemy import select
 from fastapi import HTTPException, UploadFile
 from PIL import Image
 from pydantic import ValidationError
@@ -19,9 +20,12 @@ from starlette.datastructures import Headers
 
 from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
-from app.main import create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, upload_cover
+from app.imports.legacy_excel import commit_rows, preview_workbook
+from app.imports.pre_formula import PreFormulaError, parse_pre_formula
+from app.main import clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, mark_for_revisit, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.schemas.music import AlbumCreate, RatingRevisionCreate
+from app.models.music import Album, LegacyRating
+from app.schemas.music import AlbumCreate, RatingRevisionCreate, RevisitUpdate
 
 
 @pytest.fixture(autouse=True)
@@ -238,3 +242,63 @@ def test_replace_and_delete_cover_removes_old_file() -> None:
     assert not (cover_dir() / second_filename).exists()
     with SessionLocal() as session:
         assert delete_cover(album.id, session).cover_url is None
+
+
+def test_legacy_pre_formula_parses_decimal_comma_and_audits_grace() -> None:
+    scores, denominator = parse_pre_formula("=(10+10+10+10+10+10+10+10+9,5+10+10)/11")
+    assert denominator == 11
+    assert scores[8] == Decimal("9.5")
+    assert len(scores) == 11
+    with pytest.raises(PreFormulaError):
+        parse_pre_formula("=AVERAGE(10,9)")
+
+
+def test_legacy_preview_marks_audit_discrepancies_as_warnings() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "AÑO", "CALIFICACIÓN", None, "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    sheet.append(["Grace", "Jeff Buckley", 1994, 1, None, "=(10+9,5+10)/3", 7, 0, 10])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        preview = preview_workbook(data.getvalue(), session)
+    assert preview[0].status == "warning"
+    assert preview[0].computed_pre_rating == Decimal("9.833333333333333333333333333")
+    assert any("final rating differs" in warning for warning in preview[0].warnings)
+
+
+def test_legacy_commit_creates_no_tracks_or_rating_revision() -> None:
+    from openpyxl import Workbook
+
+    workbook = Workbook(); sheet = workbook.active
+    sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "EMOCIÓN"])
+    sheet.append(["Legacy Album", "Legacy Artist", "=(10+9.5)/2", 7, 8])
+    data = BytesIO(); workbook.save(data)
+    with SessionLocal() as session:
+        rows = preview_workbook(data.getvalue(), session)
+        imported, skipped, failed = commit_rows(rows, {2}, session)
+        legacy = session.scalar(select(LegacyRating))
+        album = session.get(Album, legacy.album_id) if legacy else None
+        track_count = len(album.tracks) if album else None
+        revision_count = len(album.revisions) if album else None
+    assert (imported, skipped, failed) == (1, 0, 0)
+    assert legacy is not None
+    assert legacy.extracted_scores == ["10", "9.5"]
+    assert album is not None
+    assert track_count == 0
+    assert revision_count == 0
+
+
+def test_revisit_mark_is_current_album_state_and_survives_new_revision() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        marked = mark_for_revisit(album.id, RevisitUpdate(reason="Revisit after release hype."), session)
+    assert marked.needs_revisit is True
+    assert marked.revisit_reason == "Revisit after release hype."
+    assert marked.revisit_marked_at is not None
+    with SessionLocal() as session:
+        create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        assert get_album(album.id, session).needs_revisit is True
+        cleared = clear_revisit_mark(album.id, session)
+    assert cleared.needs_revisit is False
+    assert cleared.revisit_reason is None

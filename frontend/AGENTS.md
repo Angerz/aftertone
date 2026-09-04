@@ -9,3 +9,5 @@ Avoid giant page components: extract a component when it has a distinct responsi
 Changes to `features/ratings/ratingPreviewCalculator.ts` must run its focused parity tests with `npm test`.
 
 Historical revisions are immutable. “Rate again” must copy snapshot data into a separate frontend draft; saving always creates a new revision.
+
+Legacy extracted scores are not track ratings until explicitly reconciled: never map them by position or invent track identities. Legacy derived values are audit inputs recomputed by the backend calculator. `needs_revisit` is current album state and saving a revision must not clear it.

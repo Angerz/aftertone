@@ -62,6 +62,14 @@ class LatestRevisionResponse(APIModel):
     final_rating: Decimal | None
 
 
+class LegacyRatingSummaryResponse(APIModel):
+    id: int
+    imported_at: datetime
+    legacy_final_rating: Decimal | None
+    computed_final_rating: Decimal | None
+    reconciliation_status: str
+
+
 class AlbumResponse(APIModel):
     id: int
     title: str
@@ -72,6 +80,41 @@ class AlbumResponse(APIModel):
     tracks: list[TrackResponse]
     latest_revision: LatestRevisionResponse | None = None
     cover_url: str | None = None
+    needs_revisit: bool = False
+    revisit_reason: str | None = None
+    revisit_marked_at: datetime | None = None
+    latest_legacy_rating: LegacyRatingSummaryResponse | None = None
+
+
+class RevisitUpdate(APIModel):
+    reason: str | None = Field(default=None, max_length=5000)
+
+
+class LegacyImportPreviewRowResponse(APIModel):
+    row_number: int
+    title: str | None
+    artist: str | None
+    legacy_final_rating: Decimal | None
+    legacy_pre_rating: Decimal | None
+    legacy_bad_experience: Decimal | None
+    computed_pre_rating: Decimal | None
+    computed_bad_experience: Decimal | None
+    computed_final_rating: Decimal | None
+    pre_formula: str | None
+    extracted_score_count: int
+    status: str
+    warnings: list[str]
+    errors: list[str]
+
+
+class LegacyImportPreviewResponse(APIModel):
+    rows: list[LegacyImportPreviewRowResponse]
+
+
+class LegacyImportCommitResponse(APIModel):
+    imported: int
+    skipped: int
+    failed: int
 
 
 class TrackRatingRevisionCreate(APIModel):

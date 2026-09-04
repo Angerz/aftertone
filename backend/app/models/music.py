@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -28,10 +28,14 @@ class Album(Base):
     )
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cover_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    needs_revisit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    revisit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revisit_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     tracks: Mapped[list[Track]] = relationship(back_populates="album", cascade="all, delete-orphan")
     revisions: Mapped[list[RatingRevision]] = relationship(back_populates="album", cascade="all, delete-orphan")
+    legacy_ratings: Mapped[list[LegacyRating]] = relationship(back_populates="album", cascade="all, delete-orphan")
 
 
 class Track(Base):
@@ -89,3 +93,29 @@ class TrackRatingRevision(Base):
     include_in_pre_rating: Mapped[bool] = mapped_column(default=True)
 
     revision: Mapped[RatingRevision] = relationship(back_populates="track_ratings")
+
+
+class LegacyRating(Base):
+    """Incomplete historical evaluation imported without a track mapping."""
+
+    __tablename__ = "legacy_ratings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    album_id: Mapped[int] = mapped_column(ForeignKey("albums.id", ondelete="CASCADE"))
+    legacy_final_rating: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    legacy_pre_rating: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    legacy_bad_experience: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    coherence: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    emotion: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    extracted_scores: Mapped[list[str]] = mapped_column(JSON)
+    pre_formula: Mapped[str] = mapped_column(Text)
+    computed_pre_rating: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    computed_bad_experience: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    computed_final_rating: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    source: Mapped[str] = mapped_column(String(100), default="legacy_excel")
+    reconciliation_status: Mapped[str] = mapped_column(String(20), default="pending")
+    legacy_decade: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    legacy_genre: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    album: Mapped[Album] = relationship(back_populates="legacy_ratings")

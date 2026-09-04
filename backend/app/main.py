@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timezone
+import json
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -10,14 +12,20 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
 from app.config import cover_dir, web_origin
-from app.models.music import Album, RatingRevision, Track
+from app.models.music import Album, LegacyRating, RatingRevision, Track
+from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.schemas.music import (
     AlbumCreate,
     AlbumResponse,
+    LegacyImportCommitResponse,
+    LegacyImportPreviewResponse,
+    LegacyImportPreviewRowResponse,
+    LegacyRatingSummaryResponse,
     LatestRevisionResponse,
     RatingRevisionCreate,
     RatingRevisionResponse,
     RatingRevisionSummaryResponse,
+    RevisitUpdate,
     TrackRatingRevisionResponse,
     TrackResponse,
 )
@@ -29,7 +37,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[web_origin()],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
 cover_dir().mkdir(parents=True, exist_ok=True)
@@ -44,7 +52,7 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def album_response(album: Album, latest_revision: RatingRevision | None = None) -> AlbumResponse:
+def album_response(album: Album, latest_revision: RatingRevision | None = None, latest_legacy: LegacyRating | None = None) -> AlbumResponse:
     return AlbumResponse(
         id=album.id, title=album.title, artist=album.artist, year=album.release_year,
         release_type=album.release_type, created_at=album.created_at,
@@ -54,6 +62,11 @@ def album_response(album: Album, latest_revision: RatingRevision | None = None) 
             pre_rating=latest_revision.pre_rating, final_rating=latest_revision.final_rating,
         ) if latest_revision else None,
         cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
+        needs_revisit=album.needs_revisit, revisit_reason=album.revisit_reason, revisit_marked_at=album.revisit_marked_at,
+        latest_legacy_rating=LegacyRatingSummaryResponse(
+            id=latest_legacy.id, imported_at=latest_legacy.imported_at, legacy_final_rating=latest_legacy.legacy_final_rating,
+            computed_final_rating=latest_legacy.computed_final_rating, reconciliation_status=latest_legacy.reconciliation_status,
+        ) if latest_legacy else None,
     )
 
 
@@ -105,15 +118,20 @@ def list_albums(session: Session = Depends(get_session)) -> list[AlbumResponse]:
         .correlate(Album)
         .scalar_subquery()
     )
+    latest_legacy_id = (
+        select(LegacyRating.id).where(LegacyRating.album_id == Album.id)
+        .order_by(LegacyRating.imported_at.desc(), LegacyRating.id.desc()).limit(1).correlate(Album).scalar_subquery()
+    )
     rows = session.execute(
-        select(Album, RatingRevision)
+        select(Album, RatingRevision, LegacyRating)
         .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
+        .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
         .options(selectinload(Album.tracks))
         .order_by(Album.id)
     ).all()
-    for album, _ in rows:
+    for album, _, _ in rows:
         album.tracks.sort(key=lambda track: track.position)
-    return [album_response(album, latest_revision) for album, latest_revision in rows]
+    return [album_response(album, latest_revision, latest_legacy) for album, latest_revision, latest_legacy in rows]
 
 
 @app.get("/api/albums/{album_id}", response_model=AlbumResponse, tags=["albums"])
@@ -122,7 +140,61 @@ def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumRe
     if album is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
     album.tracks.sort(key=lambda track: track.position)
+    latest_legacy = session.scalar(select(LegacyRating).where(LegacyRating.album_id == album.id).order_by(LegacyRating.imported_at.desc(), LegacyRating.id.desc()))
+    return album_response(album, latest_legacy=latest_legacy)
+
+
+@app.patch("/api/albums/{album_id}/revisit", response_model=AlbumResponse, tags=["albums"])
+def mark_for_revisit(album_id: int, payload: RevisitUpdate, session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    album.needs_revisit = True
+    album.revisit_reason = payload.reason.strip() if payload.reason else None
+    album.revisit_marked_at = datetime.now(timezone.utc)
+    session.commit(); session.refresh(album)
     return album_response(album)
+
+
+@app.delete("/api/albums/{album_id}/revisit", response_model=AlbumResponse, tags=["albums"])
+def clear_revisit_mark(album_id: int, session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    album.needs_revisit = False; album.revisit_reason = None; album.revisit_marked_at = None
+    session.commit(); session.refresh(album)
+    return album_response(album)
+
+
+def preview_response(rows) -> LegacyImportPreviewResponse:
+    return LegacyImportPreviewResponse(rows=[LegacyImportPreviewRowResponse(
+        row_number=row.row_number, title=row.title, artist=row.artist, legacy_final_rating=row.legacy_final_rating,
+        legacy_pre_rating=row.legacy_pre_rating, legacy_bad_experience=row.legacy_bad_experience,
+        computed_pre_rating=row.computed_pre_rating, computed_bad_experience=row.computed_bad_experience,
+        computed_final_rating=row.computed_final_rating, pre_formula=row.pre_formula,
+        extracted_score_count=len(row.extracted_scores), status=row.status, warnings=row.warnings, errors=row.errors,
+    ) for row in rows])
+
+
+@app.post("/api/imports/legacy-ratings/preview", response_model=LegacyImportPreviewResponse, tags=["imports"])
+def preview_legacy_import(file: UploadFile = File(...), session: Session = Depends(get_session)) -> LegacyImportPreviewResponse:
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=422, detail="Select an .xlsx workbook.")
+    try:
+        return preview_response(preview_workbook(file.file.read(), session))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        file.file.close()
+
+
+@app.post("/api/imports/legacy-ratings/commit", response_model=LegacyImportCommitResponse, tags=["imports"])
+def commit_legacy_import(file: UploadFile = File(...), selected_rows: str = Form(...), session: Session = Depends(get_session)) -> LegacyImportCommitResponse:
+    try:
+        selected = {int(value) for value in json.loads(selected_rows)}
+        rows = preview_workbook(file.file.read(), session)
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        file.file.close()
+    imported, skipped, failed = commit_rows(rows, selected, session)
+    return LegacyImportCommitResponse(imported=imported, skipped=skipped, failed=failed)
 
 
 def album_with_tracks(album_id: int, session: Session) -> Album:
