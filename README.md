@@ -63,7 +63,20 @@ AGENTS.md                 project instructions for coding agents
 .env.example              loopback ports and SQLite URL
 ```
 
-The current API only exposes a health endpoint. The next interface/API iteration should add a narrow album-and-revision creation workflow without duplicating the calculator.
+## Current API
+
+FastAPI exposes interactive OpenAPI documentation at `/docs`. The current vertical slice provides:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/albums` | Create an album and its complete track list. |
+| `GET` | `/api/albums` | List albums. |
+| `GET` | `/api/albums/{album_id}` | Read album metadata and tracks. |
+| `POST` | `/api/albums/{album_id}/revisions` | Create a complete calculated rating snapshot. |
+| `GET` | `/api/albums/{album_id}/revisions` | List revision summaries. |
+| `GET` | `/api/albums/{album_id}/revisions/{revision_id}` | Read a complete historical snapshot. |
+
+Every revision must contain one rating entry for each current album track. The server obtains all derived values from the central rating calculator; clients never provide them.
 
 ## Key decisions
 
