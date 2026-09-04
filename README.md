@@ -54,6 +54,7 @@ pytest tests/ratings/test_calculator.py
 ```
 
 Use focused tests for the code changed; reserve the full suite (`pytest`) for cross-cutting work or a release. For frontend type checking, run `npm run lint`; use `npm run build` when build-level confidence is useful.
+Run the focused frontend rating-preview parity suite from `frontend/` with `npm test`.
 
 ## Layout
 
