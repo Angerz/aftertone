@@ -13,6 +13,7 @@ from app.models.music import Album, RatingRevision, Track
 from app.schemas.music import (
     AlbumCreate,
     AlbumResponse,
+    LatestRevisionResponse,
     RatingRevisionCreate,
     RatingRevisionResponse,
     RatingRevisionSummaryResponse,
@@ -39,11 +40,15 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def album_response(album: Album) -> AlbumResponse:
+def album_response(album: Album, latest_revision: RatingRevision | None = None) -> AlbumResponse:
     return AlbumResponse(
         id=album.id, title=album.title, artist=album.artist, year=album.release_year,
         release_type=album.release_type, created_at=album.created_at,
         tracks=[TrackResponse(id=track.id, position=track.position, title=track.title) for track in album.tracks],
+        latest_revision=LatestRevisionResponse(
+            id=latest_revision.id, created_at=latest_revision.created_at,
+            pre_rating=latest_revision.pre_rating, final_rating=latest_revision.final_rating,
+        ) if latest_revision else None,
     )
 
 
@@ -87,10 +92,23 @@ def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) 
 
 @app.get("/api/albums", response_model=list[AlbumResponse], tags=["albums"])
 def list_albums(session: Session = Depends(get_session)) -> list[AlbumResponse]:
-    albums = session.scalars(select(Album).options(selectinload(Album.tracks)).order_by(Album.id)).all()
-    for album in albums:
+    latest_revision_id = (
+        select(RatingRevision.id)
+        .where(RatingRevision.album_id == Album.id)
+        .order_by(RatingRevision.created_at.desc(), RatingRevision.id.desc())
+        .limit(1)
+        .correlate(Album)
+        .scalar_subquery()
+    )
+    rows = session.execute(
+        select(Album, RatingRevision)
+        .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
+        .options(selectinload(Album.tracks))
+        .order_by(Album.id)
+    ).all()
+    for album, _ in rows:
         album.tracks.sort(key=lambda track: track.position)
-    return [album_response(album) for album in albums]
+    return [album_response(album, latest_revision) for album, latest_revision in rows]
 
 
 @app.get("/api/albums/{album_id}", response_model=AlbumResponse, tags=["albums"])
