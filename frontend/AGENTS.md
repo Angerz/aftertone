@@ -7,3 +7,5 @@ Use strict TypeScript; define API response/request types instead of passing unty
 Avoid giant page components: extract a component when it has a distinct responsibility or becomes hard to read. For UI changes, run `npm run lint`; run `npm run build` when changing build config, dependencies, or broader TypeScript structure. Add focused tests once behavior beyond static rendering is introduced.
 
 Changes to `features/ratings/ratingPreviewCalculator.ts` must run its focused parity tests with `npm test`.
+
+Historical revisions are immutable. “Rate again” must copy snapshot data into a separate frontend draft; saving always creates a new revision.
