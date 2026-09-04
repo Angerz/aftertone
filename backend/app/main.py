@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
+from app.config import web_origin
 from app.models.music import Album, RatingRevision, Track
 from app.schemas.music import (
     AlbumCreate,
@@ -20,6 +22,13 @@ from app.schemas.music import (
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
 
 app = FastAPI(title="Aftertone API", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[web_origin()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 def get_session() -> Generator[Session, None, None]:

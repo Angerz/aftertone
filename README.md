@@ -41,6 +41,8 @@ npm run dev -- --port "$AFTERTONE_WEB_PORT"
 ```
 
 The Vite server is explicitly loopback-bound in `vite.config.ts`.
+The API permits requests only from `AFTERTONE_WEB_ORIGIN` (the sample value is the
+local Vite URL), rather than accepting arbitrary browser origins.
 
 ## Migrations and tests
 
