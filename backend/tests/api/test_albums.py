@@ -24,8 +24,9 @@ from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, parse_pre_formula
 from app.main import clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, mark_for_revisit, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.models.music import Album, LegacyRating
-from app.schemas.music import AlbumCreate, RatingRevisionCreate, RevisitUpdate
+from app.models.music import Album, LegacyRating, Track
+from app.schemas.music import AlbumCreate, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate
+from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 
 
 @pytest.fixture(autouse=True)
@@ -302,3 +303,64 @@ def test_revisit_mark_is_current_album_state_and_survives_new_revision() -> None
         cleared = clear_revisit_mark(album.id, session)
     assert cleared.needs_revisit is False
     assert cleared.revisit_reason is None
+
+
+def test_legacy_reconciliation_requires_explicit_unique_mapping_and_preserves_unrated_tracks() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        third_track = Track(album_id=album.id, position=3, title="Last Goodbye")
+        legacy = LegacyRating(
+            album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"),
+            extracted_scores=["10", "9.5"], pre_formula="=(10+9.5)/2",
+        )
+        session.add_all([third_track, legacy])
+        session.commit()
+        session.refresh(legacy)
+        session.refresh(third_track)
+
+        payload = LegacyReconciliationRequest(
+            track_mappings=[
+                LegacyTrackMapping(legacy_score_index=0, track_id=album.tracks[0].id),
+                LegacyTrackMapping(legacy_score_index=1, track_id=album.tracks[1].id),
+            ]
+        )
+        revision = reconcile_legacy_rating(session, legacy, payload)
+        session.commit()
+        session.refresh(legacy)
+        session.refresh(revision)
+
+        assert legacy.reconciliation_status == "reconciled"
+        assert legacy.reconciled_revision_id == revision.id
+        snapshots = {item.track_id: item for item in revision.track_ratings}
+        assert snapshots[album.tracks[0].id].score == Decimal("10")
+        assert snapshots[album.tracks[0].id].include_in_pre_rating is True
+        assert snapshots[third_track.id].score is None
+        assert snapshots[third_track.id].include_in_pre_rating is False
+        with pytest.raises(ReconciliationError):
+            reconcile_legacy_rating(session, legacy, payload)
+
+
+def test_legacy_reconciliation_rejects_duplicate_track_or_missing_score_mapping() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        legacy = LegacyRating(
+            album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"),
+            extracted_scores=["10", "9"], pre_formula="=(10+9)/2",
+        )
+        session.add(legacy)
+        session.commit()
+        session.refresh(legacy)
+        duplicate_track = LegacyReconciliationRequest(
+            track_mappings=[
+                LegacyTrackMapping(legacy_score_index=0, track_id=album.tracks[0].id),
+                LegacyTrackMapping(legacy_score_index=1, track_id=album.tracks[0].id),
+            ]
+        )
+        with pytest.raises(ReconciliationError, match="at most one"):
+            reconcile_legacy_rating(session, legacy, duplicate_track)
+        missing_score = LegacyReconciliationRequest(
+            track_mappings=[LegacyTrackMapping(legacy_score_index=0, track_id=album.tracks[0].id)]
+        )
+        with pytest.raises(ReconciliationError, match="every legacy score"):
+            reconcile_legacy_rating(session, legacy, missing_score)
+        assert legacy.reconciliation_status == "pending"

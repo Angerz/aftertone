@@ -88,7 +88,7 @@ class TrackRatingRevision(Base):
     track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="RESTRICT"))
     track_title: Mapped[str] = mapped_column(String(300))
     track_position: Mapped[int] = mapped_column(Integer)
-    score: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    score: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     include_in_pre_rating: Mapped[bool] = mapped_column(default=True)
 
@@ -117,5 +117,6 @@ class LegacyRating(Base):
     legacy_decade: Mapped[str | None] = mapped_column(String(30), nullable=True)
     legacy_genre: Mapped[str | None] = mapped_column(String(300), nullable=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reconciled_revision_id: Mapped[int | None] = mapped_column(ForeignKey("rating_revisions.id", ondelete="RESTRICT"), nullable=True)
 
     album: Mapped[Album] = relationship(back_populates="legacy_ratings")
