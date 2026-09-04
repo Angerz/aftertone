@@ -8,3 +8,4 @@ An `Album` owns mutable catalogue tracks. A `RatingRevision` and its `TrackRatin
 
 Use Alembic for every schema change. Generate/review a migration, then run the narrowest relevant test command. Do not run the whole suite merely for a calculator or endpoint-only change.
 
+A complete rating-revision request must contain exactly one entry for every current track of its album. This keeps each persisted revision a reconstructible snapshot.

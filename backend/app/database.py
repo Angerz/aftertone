@@ -10,6 +10,9 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(database_url())
+_database_url = database_url()
+engine = create_engine(
+    _database_url,
+    connect_args={"check_same_thread": False} if _database_url.startswith("sqlite") else {},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
