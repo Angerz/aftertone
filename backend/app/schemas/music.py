@@ -71,6 +71,7 @@ class AlbumResponse(APIModel):
     created_at: datetime
     tracks: list[TrackResponse]
     latest_revision: LatestRevisionResponse | None = None
+    cover_url: str | None = None
 
 
 class TrackRatingRevisionCreate(APIModel):

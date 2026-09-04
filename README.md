@@ -43,6 +43,8 @@ npm run dev -- --port "$AFTERTONE_WEB_PORT"
 The Vite server is explicitly loopback-bound in `vite.config.ts`.
 The API permits requests only from `AFTERTONE_WEB_ORIGIN` (the sample value is the
 local Vite URL), rather than accepting arbitrary browser origins.
+Album covers are stored in `AFTERTONE_COVER_DIR` (by default `backend/data/covers`).
+For a complete backup, copy both the SQLite database and that cover directory.
 
 ## Migrations and tests
 

@@ -27,6 +27,7 @@ class Album(Base):
         Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]), default=ReleaseType.ALBUM
     )
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cover_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     tracks: Mapped[list[Track]] = relationship(back_populates="album", cascade="all, delete-orphan")

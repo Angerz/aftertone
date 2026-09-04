@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
+from io import BytesIO
 from decimal import Decimal
 from pathlib import Path
 
 os.environ["AFTERTONE_DATABASE_URL"] = f"sqlite:///{Path(__file__).parent / 'aftertone-api-test.sqlite3'}"
+TEST_COVER_DIR = Path(tempfile.mkdtemp(prefix="aftertone-cover-test-"))
+os.environ["AFTERTONE_COVER_DIR"] = str(TEST_COVER_DIR)
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
+from PIL import Image
 from pydantic import ValidationError
+from starlette.datastructures import Headers
 
+from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
-from app.main import create_album, create_revision, get_album, get_revision, list_albums, list_revisions
+from app.main import create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.schemas.music import AlbumCreate, RatingRevisionCreate
 
@@ -20,8 +28,11 @@ from app.schemas.music import AlbumCreate, RatingRevisionCreate
 def database() -> None:
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    shutil.rmtree(TEST_COVER_DIR, ignore_errors=True)
+    TEST_COVER_DIR.mkdir()
     yield
     Base.metadata.drop_all(engine)
+    shutil.rmtree(TEST_COVER_DIR, ignore_errors=True)
 
 
 def album_payload(title: str = "Grace") -> dict[str, object]:
@@ -45,6 +56,13 @@ def revision_payload(album) -> dict[str, object]:
             {"track_id": album.tracks[1].id, "score": "9", "include_in_pre_rating": False, "notes": "Title track."},
         ],
     }
+
+
+def image_upload(image_format: str = "PNG", content_type: str = "image/png") -> UploadFile:
+    data = BytesIO()
+    Image.new("RGB", (1600, 800), color="navy").save(data, format=image_format)
+    data.seek(0)
+    return UploadFile(file=data, filename=f"cover.{image_format.lower()}", headers=Headers({"content-type": content_type}))
 
 
 def test_create_get_and_list_albums_with_ordered_tracks() -> None:
@@ -163,3 +181,60 @@ def test_revision_and_album_not_found_or_mismatched_path() -> None:
     with SessionLocal() as session, pytest.raises(HTTPException) as wrong_album:
         get_revision(other_album.id, revision.id, session)
     assert wrong_album.value.status_code == 404
+
+
+@pytest.mark.parametrize(("image_format", "content_type"), [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")])
+def test_upload_cover_normalizes_supported_images(image_format: str, content_type: str) -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        response = upload_cover(album.id, image_upload(image_format, content_type), session)
+    assert response.cover_url is not None
+    filename = response.cover_url.rsplit("/", 1)[-1]
+    assert filename.endswith(".webp")
+    assert (cover_dir() / filename).is_file()
+    with Image.open(cover_dir() / filename) as stored:
+        assert stored.format == "WEBP"
+        assert max(stored.size) <= 1200
+
+
+def test_cover_upload_rejects_invalid_content_and_missing_album() -> None:
+    album = create_test_album()
+    invalid_type = UploadFile(file=BytesIO(b"not an image"), filename="cover.txt", headers=Headers({"content-type": "text/plain"}))
+    with SessionLocal() as session, pytest.raises(HTTPException) as invalid:
+        upload_cover(album.id, invalid_type, session)
+    assert invalid.value.status_code == 422
+    corrupt_image = UploadFile(file=BytesIO(b"not an image"), filename="cover.png", headers=Headers({"content-type": "image/png"}))
+    with SessionLocal() as session, pytest.raises(HTTPException) as corrupt:
+        upload_cover(album.id, corrupt_image, session)
+    assert corrupt.value.status_code == 422
+    with SessionLocal() as session, pytest.raises(HTTPException) as missing:
+        upload_cover(99999, image_upload(), session)
+    assert missing.value.status_code == 404
+
+
+def test_cover_upload_rejects_oversized_file() -> None:
+    album = create_test_album()
+    oversized = UploadFile(
+        file=BytesIO(b"x" * (10 * 1024 * 1024 + 1)), filename="cover.png", headers=Headers({"content-type": "image/png"})
+    )
+    with SessionLocal() as session, pytest.raises(HTTPException) as error:
+        upload_cover(album.id, oversized, session)
+    assert error.value.status_code == 413
+
+
+def test_replace_and_delete_cover_removes_old_file() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        first = upload_cover(album.id, image_upload(), session)
+        first_filename = first.cover_url.rsplit("/", 1)[-1] if first.cover_url else ""
+    with SessionLocal() as session:
+        second = upload_cover(album.id, image_upload("JPEG", "image/jpeg"), session)
+        second_filename = second.cover_url.rsplit("/", 1)[-1] if second.cover_url else ""
+    assert not (cover_dir() / first_filename).exists()
+    assert (cover_dir() / second_filename).is_file()
+    with SessionLocal() as session:
+        deleted = delete_cover(album.id, session)
+    assert deleted.cover_url is None
+    assert not (cover_dir() / second_filename).exists()
+    with SessionLocal() as session:
+        assert delete_cover(album.id, session).cover_url is None

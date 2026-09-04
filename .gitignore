@@ -15,6 +15,7 @@ frontend/dist/
 *.db
 *.sqlite
 *.sqlite3
+backend/data/covers/
 
 # IDE / OS
 .vscode/
