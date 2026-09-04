@@ -54,7 +54,26 @@ def test_create_get_and_list_albums_with_ordered_tracks() -> None:
     with SessionLocal() as session:
         found = get_album(created.id, session)
         assert [track.title for track in found.tracks] == ["Mojo Pin", "Grace"]
-        assert [album.id for album in list_albums(session)] == [created.id]
+        listed = list_albums(session)
+        assert [album.id for album in listed] == [created.id]
+        assert listed[0].latest_revision is None
+
+
+def test_album_list_includes_only_the_latest_revision_summary() -> None:
+    album = create_test_album()
+    first_payload = RatingRevisionCreate.model_validate(revision_payload(album))
+    with SessionLocal() as session:
+        first = create_revision(album.id, first_payload, session)
+    second_data = revision_payload(album)
+    second_data["emotion"] = "5"
+    with SessionLocal() as session:
+        second = create_revision(album.id, RatingRevisionCreate.model_validate(second_data), session)
+        latest = list_albums(session)[0].latest_revision
+    assert latest is not None
+    assert latest.id == second.id
+    assert latest.id != first.id
+    assert latest.pre_rating == second.pre_rating
+    assert latest.final_rating == second.final_rating
 
 
 def test_create_and_read_complete_calculated_revision() -> None:

@@ -55,6 +55,13 @@ class TrackResponse(APIModel):
     title: str
 
 
+class LatestRevisionResponse(APIModel):
+    id: int
+    created_at: datetime
+    pre_rating: Decimal | None
+    final_rating: Decimal | None
+
+
 class AlbumResponse(APIModel):
     id: int
     title: str
@@ -63,6 +70,7 @@ class AlbumResponse(APIModel):
     release_type: ReleaseType
     created_at: datetime
     tracks: list[TrackResponse]
+    latest_revision: LatestRevisionResponse | None = None
 
 
 class TrackRatingRevisionCreate(APIModel):
