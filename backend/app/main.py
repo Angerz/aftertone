@@ -14,6 +14,7 @@ from app.database import SessionLocal
 from app.config import cover_dir, web_origin
 from app.models.music import Album, LegacyRating, RatingRevision, Track
 from app.imports.legacy_excel import commit_rows, preview_workbook
+from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
     AlbumCreate,
     AlbumResponse,
@@ -21,6 +22,10 @@ from app.schemas.music import (
     LegacyImportPreviewResponse,
     LegacyImportPreviewRowResponse,
     LegacyRatingSummaryResponse,
+    LegacyReconciliationRequest,
+    LegacyReconciliationPreviewResponse,
+    LegacyReconciliationResponse,
+    LegacyRatingDetailResponse,
     LatestRevisionResponse,
     RatingRevisionCreate,
     RatingRevisionResponse,
@@ -195,6 +200,43 @@ def commit_legacy_import(file: UploadFile = File(...), selected_rows: str = Form
         file.file.close()
     imported, skipped, failed = commit_rows(rows, selected, session)
     return LegacyImportCommitResponse(imported=imported, skipped=skipped, failed=failed)
+
+@app.get("/api/legacy-ratings/{legacy_rating_id}", response_model=LegacyRatingDetailResponse, tags=["legacy"])
+def get_legacy_rating(legacy_rating_id: int, session: Session = Depends(get_session)) -> LegacyRatingDetailResponse:
+    legacy = session.get(LegacyRating, legacy_rating_id)
+    if legacy is None: raise HTTPException(status_code=404, detail="legacy rating not found")
+    return LegacyRatingDetailResponse(id=legacy.id, album_id=legacy.album_id, extracted_scores=[Decimal(value) for value in legacy.extracted_scores], coherence=legacy.coherence, emotion=legacy.emotion, legacy_pre_rating=legacy.legacy_pre_rating, legacy_bad_experience=legacy.legacy_bad_experience, legacy_final_rating=legacy.legacy_final_rating, reconciliation_status=legacy.reconciliation_status)
+
+
+@app.post("/api/legacy-ratings/{legacy_rating_id}/reconcile", response_model=LegacyReconciliationResponse, tags=["legacy"])
+def reconcile_legacy(legacy_rating_id: int, payload: LegacyReconciliationRequest, session: Session = Depends(get_session)) -> LegacyReconciliationResponse:
+    legacy = session.get(LegacyRating, legacy_rating_id)
+    if legacy is None:
+        raise HTTPException(status_code=404, detail="legacy rating not found")
+    was_pending = legacy.reconciliation_status == "pending"
+    try:
+        revision = reconcile_legacy_rating(session, legacy, payload)
+        session.commit()
+    except ReconciliationError as error:
+        session.rollback()
+        raise HTTPException(status_code=422 if was_pending else 409, detail=str(error)) from error
+    except Exception:
+        session.rollback()
+        raise
+    return LegacyReconciliationResponse(revision_id=revision.id, pre_rating=revision.pre_rating, bad_experience=revision.bad_experience, final_rating=revision.final_rating)
+
+
+@app.post("/api/legacy-ratings/{legacy_rating_id}/reconcile-preview", response_model=LegacyReconciliationPreviewResponse, tags=["legacy"])
+def preview_legacy_reconciliation_endpoint(legacy_rating_id: int, payload: LegacyReconciliationRequest, session: Session = Depends(get_session)) -> LegacyReconciliationPreviewResponse:
+    legacy = session.get(LegacyRating, legacy_rating_id)
+    if legacy is None:
+        raise HTTPException(status_code=404, detail="legacy rating not found")
+    was_pending = legacy.reconciliation_status == "pending"
+    try:
+        result = preview_legacy_reconciliation(session, legacy, payload)
+    except ReconciliationError as error:
+        raise HTTPException(status_code=422 if was_pending else 409, detail=str(error)) from error
+    return LegacyReconciliationPreviewResponse(pre_rating=result.pre_rating, bad_experience=result.bad_experience, final_rating=result.final_rating)
 
 
 def album_with_tracks(album_id: int, session: Session) -> Album:

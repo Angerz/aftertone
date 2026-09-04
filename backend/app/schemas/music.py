@@ -117,6 +117,40 @@ class LegacyImportCommitResponse(APIModel):
     failed: int
 
 
+class LegacyTrackMapping(APIModel):
+    legacy_score_index: int = Field(ge=0)
+    track_id: int = Field(ge=1)
+
+
+class LegacyReconciliationRequest(APIModel):
+    track_titles: list[str] = Field(default_factory=list)
+    track_mappings: list[LegacyTrackMapping]
+
+
+class LegacyReconciliationResponse(APIModel):
+    revision_id: int
+    pre_rating: Decimal | None
+    bad_experience: Decimal | None
+    final_rating: Decimal | None
+
+
+class LegacyReconciliationPreviewResponse(APIModel):
+    pre_rating: Decimal | None
+    bad_experience: Decimal | None
+    final_rating: Decimal | None
+
+class LegacyRatingDetailResponse(APIModel):
+    id: int
+    album_id: int
+    extracted_scores: list[Decimal]
+    coherence: Decimal
+    emotion: Decimal
+    legacy_pre_rating: Decimal | None
+    legacy_bad_experience: Decimal | None
+    legacy_final_rating: Decimal | None
+    reconciliation_status: str
+
+
 class TrackRatingRevisionCreate(APIModel):
     track_id: int = Field(ge=1)
     score: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
@@ -137,7 +171,7 @@ class TrackRatingRevisionResponse(APIModel):
     track_id: int
     title: str
     position: int
-    score: Decimal
+    score: Decimal | None
     include_in_pre_rating: bool
     notes: str | None
 
