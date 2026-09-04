@@ -9,7 +9,7 @@ export interface Album {
 }
 export interface TrackCreate { position: number; title: string }
 export interface AlbumCreate { title: string; artist: string; year: number | null; release_type: ReleaseType; tracks: TrackCreate[] }
-export interface TrackRatingRevision { track_id: number; title: string; position: number; score: number; include_in_pre_rating: boolean; notes: string | null }
+export interface TrackRatingRevision { track_id: number; title: string; position: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
 export interface TrackRatingRevisionCreate { track_id: number; score: number; include_in_pre_rating: boolean; notes: string | null }
 export interface RatingRevisionDetail {
   id: number; album_id: number; created_at: string; pre_rating: number | null;
@@ -22,3 +22,4 @@ export interface RatingRevisionCreate { coherence: number; coherence_notes: stri
 export interface LegacyImportRow { row_number: number; title: string | null; artist: string | null; legacy_final_rating: number | null; legacy_pre_rating: number | null; legacy_bad_experience: number | null; computed_pre_rating: number | null; computed_bad_experience: number | null; computed_final_rating: number | null; pre_formula: string | null; extracted_score_count: number; status: "ready" | "warning" | "error"; warnings: string[]; errors: string[] }
 export interface LegacyImportPreview { rows: LegacyImportRow[] }
 export interface LegacyImportCommit { imported: number; skipped: number; failed: number }
+export interface LegacyRatingDetail { id: number; album_id: number; extracted_scores: number[]; coherence: number; emotion: number; legacy_pre_rating: number | null; legacy_bad_experience: number | null; legacy_final_rating: number | null; reconciliation_status: string }

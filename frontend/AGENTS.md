@@ -11,3 +11,5 @@ Changes to `features/ratings/ratingPreviewCalculator.ts` must run its focused pa
 Historical revisions are immutable. “Rate again” must copy snapshot data into a separate frontend draft; saving always creates a new revision.
 
 Legacy extracted scores are not track ratings until explicitly reconciled: never map them by position or invent track identities. Legacy derived values are audit inputs recomputed by the backend calculator. `needs_revisit` is current album state and saving a revision must not clear it.
+
+Manual legacy reconciliation must require one explicit user selection for every extracted score; a track can receive at most one. A `null` score in a historical track snapshot means “unrated” and must remain distinct from a score of zero.

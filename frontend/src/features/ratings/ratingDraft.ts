@@ -16,7 +16,7 @@ export function revisionToRatingDraft(album: Album, revision: RatingRevisionDeta
     draft: {
       tracks: album.tracks.map((track) => {
         const snapshot = snapshotsByTrackId.get(track.id);
-        return snapshot ? { trackId: track.id, title: track.title, position: track.position, score: String(snapshot.score), include: snapshot.include_in_pre_rating, notes: snapshot.notes ?? "" } : { trackId: track.id, title: track.title, position: track.position, score: "", include: true, notes: "" };
+        return snapshot ? { trackId: track.id, title: track.title, position: track.position, score: snapshot.score === null ? "" : String(snapshot.score), include: snapshot.include_in_pre_rating, notes: snapshot.notes ?? "" } : { trackId: track.id, title: track.title, position: track.position, score: "", include: true, notes: "" };
       }),
       coherence: String(revision.coherence), coherenceNotes: revision.coherence_notes ?? "", emotion: String(revision.emotion), emotionNotes: revision.emotion_notes ?? "", albumNotes: revision.album_notes ?? "",
     },
