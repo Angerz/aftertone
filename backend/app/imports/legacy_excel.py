@@ -11,8 +11,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.models.music import Album, LegacyRating, ReleaseType
+from app.models.music import Album, AlbumArtist, Artist, LegacyRating, ReleaseType
 from app.ratings.calculator import TrackScore, calculate_rating
+from app.services.artists import get_or_create_artist, normalize_artist_name, set_album_artists
 
 TOLERANCE = Decimal("0.001")
 
@@ -94,6 +95,10 @@ def _text(value: object) -> str | None:
     return text or None
 
 
+def _legacy_duplicate(session: Session, title: str, artist: str) -> bool:
+    return session.scalar(select(Album.id).join(AlbumArtist).join(Artist).where(func.lower(Album.title) == title.casefold(), Artist.normalized_name == normalize_artist_name(artist))) is not None
+
+
 def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
     try:
         formulas = load_workbook(BytesIO(data), data_only=False, read_only=True).active
@@ -126,7 +131,7 @@ def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
             if all(_blank(value) for value in rating_values):
                 row.status = "unrated"
                 key = (row.artist.casefold(), row.title.casefold())
-                if key in seen or session.scalar(select(Album.id).where(func.lower(Album.title) == row.title.casefold(), func.lower(Album.artist) == row.artist.casefold())) is not None:
+                if key in seen or _legacy_duplicate(session, row.title, row.artist):
                     row.warn("An album with this artist and title already exists.")
                 seen.add(key)
                 rows.append(row)
@@ -165,7 +170,7 @@ def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
             if row.legacy_bad_experience is not None and abs(row.legacy_bad_experience - row.computed_bad_experience) > TOLERANCE:
                 row.warn("Legacy bad experience differs from the computed value.")
             key = (row.artist.casefold(), row.title.casefold())
-            if key in seen or session.scalar(select(Album.id).where(func.lower(Album.title) == row.title.casefold(), func.lower(Album.artist) == row.artist.casefold())) is not None:
+            if key in seen or _legacy_duplicate(session, row.title, row.artist):
                 row.warn("An album with this artist and title already exists.")
             seen.add(key)
         except (ValueError, PreFormulaError) as error:
@@ -183,17 +188,19 @@ def commit_rows(rows: list[LegacyPreviewRow], selected_row_numbers: set[int], se
         try:
             if not row.title or not row.artist:
                 raise ValueError("Row is incomplete.")
-            if session.scalar(select(Album.id).where(func.lower(Album.title) == row.title.casefold(), func.lower(Album.artist) == row.artist.casefold())) is not None:
+            if _legacy_duplicate(session, row.title, row.artist):
                 skipped += 1
                 continue
-            album = Album(title=row.title, artist=row.artist, release_year=row.year, release_type=ReleaseType.ALBUM)
+            album = Album(title=row.title, release_year=row.year, release_type=ReleaseType.ALBUM)
+            session.add(album); session.flush()
+            set_album_artists(session, album, [get_or_create_artist(session, row.artist).id])
             if row.status == "unrated":
-                session.add(album); session.commit(); imported += 1
+                session.commit(); imported += 1
                 continue
             if row.coherence is None or row.emotion is None or not row.pre_formula:
                 raise ValueError("Row is incomplete.")
             legacy = LegacyRating(album=album, legacy_final_rating=row.legacy_final_rating, legacy_pre_rating=row.legacy_pre_rating, legacy_bad_experience=row.legacy_bad_experience, coherence=row.coherence, emotion=row.emotion, extracted_scores=[str(score) for score in row.extracted_scores], pre_formula=row.pre_formula, computed_pre_rating=row.computed_pre_rating, computed_bad_experience=row.computed_bad_experience, computed_final_rating=row.computed_final_rating, legacy_decade=row.decade, legacy_genre=row.genre)
-            session.add_all([album, legacy]); session.commit(); imported += 1
+            session.add(legacy); session.commit(); imported += 1
         except Exception:
             session.rollback(); failed += 1
     return imported, skipped, failed

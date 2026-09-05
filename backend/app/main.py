@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
 from app.config import cover_dir, web_origin
-from app.models.music import Album, LegacyRating, RatingRevision, Track
+from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, Track, TrackArtist, TrackArtistRole
 from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
@@ -20,6 +20,12 @@ from app.schemas.music import (
     AlbumUpdate,
     CoverFromUrl,
     AlbumResponse,
+    ArtistCreate,
+    ArtistAlbumResponse,
+    ArtistDetailResponse,
+    ArtistResponse,
+    TrackAppearanceResponse,
+    TrackCreditsUpdate,
     LegacyImportCommitResponse,
     LegacyImportPreviewResponse,
     LegacyImportPreviewRowResponse,
@@ -38,6 +44,7 @@ from app.schemas.music import (
 )
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
 from app.services.covers import CoverError, download_cover_from_url, remove_cover_file, save_cover
+from app.services.artists import artist_ids_from_inputs, get_or_create_artist, normalize_artist_name, set_album_artists, set_track_artists
 from decimal import Decimal
 
 app = FastAPI(title="Aftertone API", version="0.1.0")
@@ -61,10 +68,18 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def album_response(album: Album, latest_revision: RatingRevision | None = None, latest_legacy: LegacyRating | None = None) -> AlbumResponse:
+    credits = sorted(album.artist_credits, key=lambda credit: credit.position)
+    artists = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in credits]
+    def track_response(track: Track) -> TrackResponse:
+        track_credits = sorted(track.artist_credits, key=lambda credit: (credit.role.value, credit.position))
+        explicit_primary = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in track_credits if credit.role == TrackArtistRole.PRIMARY]
+        primary = explicit_primary or artists
+        featured = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in track_credits if credit.role == TrackArtistRole.FEATURED]
+        return TrackResponse(id=track.id, position=track.position, title=track.title, primary_artists=primary, featured_artists=featured, uses_album_artists=not explicit_primary)
     return AlbumResponse(
-        id=album.id, title=album.title, artist=album.artist, year=album.release_year,
+        id=album.id, title=album.title, artists=artists, year=album.release_year,
         release_type=album.release_type, created_at=album.created_at,
-        tracks=[TrackResponse(id=track.id, position=track.position, title=track.title) for track in album.tracks],
+        tracks=[track_response(track) for track in album.tracks],
         latest_revision=LatestRevisionResponse(
             id=latest_revision.id, created_at=latest_revision.created_at,
             pre_rating=latest_revision.pre_rating, final_rating=latest_revision.final_rating,
@@ -102,11 +117,13 @@ def health() -> dict[str, str]:
 @app.post("/api/albums", response_model=AlbumResponse, status_code=status.HTTP_201_CREATED, tags=["albums"])
 def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) -> AlbumResponse:
     album = Album(
-        title=payload.title, artist=payload.artist, release_year=payload.year, release_type=payload.release_type,
+        title=payload.title, release_year=payload.year, release_type=payload.release_type,
         tracks=[Track(position=track.position, title=track.title) for track in payload.tracks],
     )
     try:
         session.add(album)
+        session.flush()
+        set_album_artists(session, album, artist_ids_from_inputs(session, payload.artists))
         session.commit()
         session.refresh(album)
     except Exception:
@@ -134,7 +151,10 @@ def list_albums(session: Session = Depends(get_session)) -> list[AlbumResponse]:
         select(Album, RatingRevision, LegacyRating)
         .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
         .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
-        .options(selectinload(Album.tracks))
+        .options(
+            selectinload(Album.tracks).selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
+            selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
+        )
         .order_by(Album.id)
     ).all()
     for album, _, _ in rows:
@@ -144,7 +164,10 @@ def list_albums(session: Session = Depends(get_session)) -> list[AlbumResponse]:
 
 @app.get("/api/albums/{album_id}", response_model=AlbumResponse, tags=["albums"])
 def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumResponse:
-    album = session.scalar(select(Album).options(selectinload(Album.tracks)).where(Album.id == album_id))
+    album = session.scalar(select(Album).options(
+        selectinload(Album.tracks).selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
+        selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
+    ).where(Album.id == album_id))
     if album is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
     album.tracks.sort(key=lambda track: track.position)
@@ -156,16 +179,69 @@ def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumRe
 def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends(get_session)) -> AlbumResponse:
     album = album_with_tracks(album_id, session)
     album.title = payload.title
-    album.artist = payload.artist
     album.release_year = payload.year
     album.release_type = payload.release_type
     try:
+        set_album_artists(session, album, artist_ids_from_inputs(session, payload.artists))
         session.commit()
         session.refresh(album)
     except Exception:
         session.rollback()
         raise
     return album_response(album)
+
+
+@app.get("/api/artists", response_model=list[ArtistResponse], tags=["artists"])
+def list_artists(session: Session = Depends(get_session)) -> list[ArtistResponse]:
+    artists = session.scalars(select(Artist).order_by(Artist.name)).all()
+    return [ArtistResponse(id=artist.id, name=artist.name, album_count=len(artist.album_credits)) for artist in artists]
+
+
+@app.post("/api/artists", response_model=ArtistResponse, status_code=status.HTTP_201_CREATED, tags=["artists"])
+def create_artist(payload: ArtistCreate, session: Session = Depends(get_session)) -> ArtistResponse:
+    artist = get_or_create_artist(session, payload.name)
+    session.commit()
+    return ArtistResponse(id=artist.id, name=artist.name, album_count=0)
+
+
+@app.get("/api/artists/{artist_id}", response_model=ArtistDetailResponse, tags=["artists"])
+def get_artist(artist_id: int, session: Session = Depends(get_session)) -> ArtistDetailResponse:
+    artist = session.scalar(select(Artist).options(
+        selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
+        selectinload(Artist.track_credits).selectinload(TrackArtist.track).selectinload(Track.album),
+    ).where(Artist.id == artist_id))
+    if artist is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    albums = sorted((credit.album for credit in artist.album_credits), key=lambda album: album.id)
+    return ArtistDetailResponse(
+        id=artist.id, name=artist.name, album_count=len(albums),
+        albums=[ArtistAlbumResponse(
+            id=album.id, title=album.title, year=album.release_year, release_type=album.release_type,
+            cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
+            artists=[ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in sorted(album.artist_credits, key=lambda credit: credit.position)],
+        ) for album in albums],
+        featured_appearances=[TrackAppearanceResponse(
+            track_id=credit.track.id, track_title=credit.track.title, album_id=credit.track.album.id,
+            album_title=credit.track.album.title, role=credit.role.value,
+        ) for credit in sorted(artist.track_credits, key=lambda credit: (credit.track.album_id, credit.track.position)) if credit.role == TrackArtistRole.FEATURED],
+    )
+
+
+@app.patch("/api/tracks/{track_id}/artists", response_model=TrackResponse, tags=["tracks"])
+def update_track_artists(track_id: int, payload: TrackCreditsUpdate, session: Session = Depends(get_session)) -> TrackResponse:
+    track = session.get(Track, track_id)
+    if track is None:
+        raise HTTPException(status_code=404, detail="track not found")
+    try:
+        set_track_artists(session, track, payload.primary_artist_ids, payload.featured_artist_ids)
+        session.commit()
+        session.refresh(track)
+    except ValueError as error:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    album = session.get(Album, track.album_id)
+    assert album is not None
+    return album_response(album).tracks[[item.id for item in album.tracks].index(track.id)]
 
 
 @app.patch("/api/albums/{album_id}/revisit", response_model=AlbumResponse, tags=["albums"])
@@ -259,7 +335,10 @@ def preview_legacy_reconciliation_endpoint(legacy_rating_id: int, payload: Legac
 
 
 def album_with_tracks(album_id: int, session: Session) -> Album:
-    album = session.scalar(select(Album).options(selectinload(Album.tracks)).where(Album.id == album_id))
+    album = session.scalar(select(Album).options(
+        selectinload(Album.tracks).selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
+        selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
+    ).where(Album.id == album_id))
     if album is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
     album.tracks.sort(key=lambda track: track.position)

@@ -17,8 +17,10 @@ Keep this a simple modular monolith: no services, queues, generic repositories, 
 - Use migrations for persistent-schema changes; do not use `create_all` at application startup.
 - Use `Decimal` for rating-domain math and `NUMERIC` columns for persisted scores.
 - Do not modify generated environments, SQLite database files, or migration history without a specific reason.
+- Artists are canonical catalogue entities, identified by normalized name; album artist order is meaningful and must be preserved.
+- Track credits are structured primary or featured credits. A track without explicit primary credits inherits its album artists; never encode featured artists in a track title.
+- Existing rating revisions remain snapshots of tracks and ratings, not mutable current artist metadata.
 
 ## Commands
 
 See `README.md` for bootstrap commands. From `backend/`, run focused tests, for example `pytest tests/ratings/test_calculator.py`; run all tests only for cross-cutting changes or a release. From `frontend/`, use `npm run dev`, `npm run build`, and `npm run lint` when relevant.
-

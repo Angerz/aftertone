@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { Album, AlbumCreate, AlbumUpdate } from "./types";
+import type { Album, AlbumCreate, AlbumUpdate, Track, TrackCreditsUpdate } from "./types";
 export const listAlbums = () => request<Album[]>("/api/albums");
 export const getAlbum = (id: number) => request<Album>(`/api/albums/${id}`);
 export const createAlbum = (payload: AlbumCreate) => request<Album>("/api/albums", { method: "POST", body: JSON.stringify(payload) });
@@ -9,3 +9,4 @@ export const importAlbumCoverFromUrl = (id: number, url: string) => request<Albu
 export const deleteAlbumCover = (id: number) => request<Album>(`/api/albums/${id}/cover`, { method: "DELETE" });
 export const markAlbumForRevisit = (id: number, reason: string) => request<Album>(`/api/albums/${id}/revisit`, { method: "PATCH", body: JSON.stringify({ reason: reason || null }) });
 export const clearAlbumRevisit = (id: number) => request<Album>(`/api/albums/${id}/revisit`, { method: "DELETE" });
+export const updateTrackArtists = (id: number, payload: TrackCreditsUpdate) => request<Track>(`/api/tracks/${id}/artists`, { method: "PATCH", body: JSON.stringify(payload) });
