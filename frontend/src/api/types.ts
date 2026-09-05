@@ -9,6 +9,7 @@ export interface Album {
 }
 export interface TrackCreate { position: number; title: string }
 export interface AlbumCreate { title: string; artist: string; year: number | null; release_type: ReleaseType; tracks: TrackCreate[] }
+export interface AlbumUpdate { title: string; artist: string; year: number | null; release_type: ReleaseType }
 export interface TrackRatingRevision { track_id: number; title: string; position: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
 export interface TrackRatingRevisionCreate { track_id: number; score: number; include_in_pre_rating: boolean; notes: string | null }
 export interface RatingRevisionDetail {

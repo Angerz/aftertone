@@ -1,0 +1,16 @@
+import { type FormEvent, useEffect, useState } from "react";
+import { getAlbum, updateAlbum } from "../../api/albums";
+import type { Album, AlbumUpdate, ReleaseType } from "../../api/types";
+import { AlbumCover } from "./AlbumCover";
+import { CoverControls } from "./CoverControls";
+
+const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation"];
+
+export function EditAlbumPage({ albumId, onCancel, onSaved }: { albumId: number; onCancel: () => void; onSaved: () => void }) {
+  const [album, setAlbum] = useState<Album | null>(null); const [title, setTitle] = useState(""); const [artist, setArtist] = useState(""); const [year, setYear] = useState(""); const [releaseType, setReleaseType] = useState<ReleaseType>("album"); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false);
+  useEffect(() => { getAlbum(albumId).then((loaded) => { setAlbum(loaded); setTitle(loaded.title); setArtist(loaded.artist); setYear(loaded.year?.toString() ?? ""); setReleaseType(loaded.release_type); }).catch((cause: Error) => setError(cause.message)).finally(() => setLoading(false)); }, [albumId]);
+  async function submit(event: FormEvent) { event.preventDefault(); setError(null); const parsedYear = year ? Number(year) : null; if (!title.trim() || !artist.trim()) { setError("Title and artist are required."); return; } if (parsedYear !== null && (!Number.isInteger(parsedYear) || parsedYear < 1000 || parsedYear > 3000)) { setError("Enter a valid year."); return; } const payload: AlbumUpdate = { title: title.trim(), artist: artist.trim(), year: parsedYear, release_type: releaseType }; setSaving(true); try { await updateAlbum(albumId, payload); onSaved(); } catch (cause) { setError((cause as Error).message); } finally { setSaving(false); } }
+  if (loading) return <main className="page"><p>Loading album…</p></main>;
+  if (!album) return <main className="page"><button className="back" onClick={onCancel}>← Album</button><p className="notice error">{error || "Album not found."}</p></main>;
+  return <main className="page narrow edit-album-page"><button className="back" onClick={onCancel}>← Album</button><p className="eyebrow">Album metadata</p><h1>Edit album</h1><form onSubmit={submit} noValidate><div className="edit-album-cover"><AlbumCover album={album} className="edit-cover" /><div><h2>Cover art</h2><CoverControls album={album} onUpdated={setAlbum} /></div></div><div className="metadata"><label>Title<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label>Artist<input value={artist} onChange={(event) => setArtist(event.target.value)} required /></label><label>Year<input type="number" min="1000" max="3000" value={year} onChange={(event) => setYear(event.target.value)} /></label><label>Release type<select value={releaseType} onChange={(event) => setReleaseType(event.target.value as ReleaseType)}>{releaseTypes.map((type) => <option key={type}>{type}</option>)}</select></label></div>{error && <p className="notice error" role="alert">{error}</p>}<div className="edit-album-actions"><button type="button" className="text-button" onClick={onCancel}>Cancel</button><button type="submit" disabled={saving}>{saving ? "Saving…" : "Save changes"}</button></div></form></main>;
+}

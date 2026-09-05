@@ -1,9 +1,11 @@
 import { request } from "./client";
-import type { Album, AlbumCreate } from "./types";
+import type { Album, AlbumCreate, AlbumUpdate } from "./types";
 export const listAlbums = () => request<Album[]>("/api/albums");
 export const getAlbum = (id: number) => request<Album>(`/api/albums/${id}`);
 export const createAlbum = (payload: AlbumCreate) => request<Album>("/api/albums", { method: "POST", body: JSON.stringify(payload) });
+export const updateAlbum = (id: number, payload: AlbumUpdate) => request<Album>(`/api/albums/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 export const uploadAlbumCover = (id: number, file: File) => { const data = new FormData(); data.append("file", file); return request<Album>(`/api/albums/${id}/cover`, { method: "PUT", body: data }); };
+export const importAlbumCoverFromUrl = (id: number, url: string) => request<Album>(`/api/albums/${id}/cover/from-url`, { method: "POST", body: JSON.stringify({ url }) });
 export const deleteAlbumCover = (id: number) => request<Album>(`/api/albums/${id}/cover`, { method: "DELETE" });
 export const markAlbumForRevisit = (id: number, reason: string) => request<Album>(`/api/albums/${id}/revisit`, { method: "PATCH", body: JSON.stringify({ reason: reason || null }) });
 export const clearAlbumRevisit = (id: number) => request<Album>(`/api/albums/${id}/revisit`, { method: "DELETE" });

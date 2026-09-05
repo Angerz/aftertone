@@ -17,6 +17,8 @@ from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
     AlbumCreate,
+    AlbumUpdate,
+    CoverFromUrl,
     AlbumResponse,
     LegacyImportCommitResponse,
     LegacyImportPreviewResponse,
@@ -35,7 +37,8 @@ from app.schemas.music import (
     TrackResponse,
 )
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
-from app.services.covers import CoverError, remove_cover_file, save_cover
+from app.services.covers import CoverError, download_cover_from_url, remove_cover_file, save_cover
+from decimal import Decimal
 
 app = FastAPI(title="Aftertone API", version="0.1.0")
 app.add_middleware(
@@ -149,6 +152,22 @@ def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumRe
     return album_response(album, latest_legacy=latest_legacy)
 
 
+@app.patch("/api/albums/{album_id}", response_model=AlbumResponse, tags=["albums"])
+def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    album.title = payload.title
+    album.artist = payload.artist
+    album.release_year = payload.year
+    album.release_type = payload.release_type
+    try:
+        session.commit()
+        session.refresh(album)
+    except Exception:
+        session.rollback()
+        raise
+    return album_response(album)
+
+
 @app.patch("/api/albums/{album_id}/revisit", response_model=AlbumResponse, tags=["albums"])
 def mark_for_revisit(album_id: int, payload: RevisitUpdate, session: Session = Depends(get_session)) -> AlbumResponse:
     album = album_with_tracks(album_id, session)
@@ -247,15 +266,7 @@ def album_with_tracks(album_id: int, session: Session) -> Album:
     return album
 
 
-@app.put("/api/albums/{album_id}/cover", response_model=AlbumResponse, tags=["albums"])
-def upload_cover(album_id: int, file: UploadFile = File(...), session: Session = Depends(get_session)) -> AlbumResponse:
-    album = album_with_tracks(album_id, session)
-    try:
-        filename = save_cover(file)
-    except CoverError as error:
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
-    finally:
-        file.file.close()
+def replace_cover(album: Album, filename: str, session: Session) -> AlbumResponse:
     old_filename = album.cover_filename
     album.cover_filename = filename
     try:
@@ -267,6 +278,28 @@ def upload_cover(album_id: int, file: UploadFile = File(...), session: Session =
         raise
     remove_cover_file(old_filename)
     return album_response(album)
+
+
+@app.put("/api/albums/{album_id}/cover", response_model=AlbumResponse, tags=["albums"])
+def upload_cover(album_id: int, file: UploadFile = File(...), session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    try:
+        filename = save_cover(file)
+    except CoverError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    finally:
+        file.file.close()
+    return replace_cover(album, filename, session)
+
+
+@app.post("/api/albums/{album_id}/cover/from-url", response_model=AlbumResponse, tags=["albums"])
+def import_cover_from_url(album_id: int, payload: CoverFromUrl, session: Session = Depends(get_session)) -> AlbumResponse:
+    album = album_with_tracks(album_id, session)
+    try:
+        filename = download_cover_from_url(payload.url)
+    except CoverError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    return replace_cover(album, filename, session)
 
 
 @app.delete("/api/albums/{album_id}/cover", response_model=AlbumResponse, tags=["albums"])

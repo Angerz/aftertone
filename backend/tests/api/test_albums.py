@@ -12,6 +12,7 @@ TEST_COVER_DIR = Path(tempfile.mkdtemp(prefix="aftertone-cover-test-"))
 os.environ["AFTERTONE_COVER_DIR"] = str(TEST_COVER_DIR)
 
 import pytest
+import httpx
 from sqlalchemy import func, select
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
@@ -23,11 +24,12 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, list_albums, list_revisions, mark_for_revisit, upload_cover
+from app.main import app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, import_cover_from_url, list_albums, list_revisions, mark_for_revisit, update_album, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.models.music import Album, LegacyRating, Track
-from app.schemas.music import AlbumCreate, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate
+from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
+from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +73,16 @@ def image_upload(image_format: str = "PNG", content_type: str = "image/png") -> 
     return UploadFile(file=data, filename=f"cover.{image_format.lower()}", headers=Headers({"content-type": content_type}))
 
 
+def image_bytes(image_format: str) -> bytes:
+    data = BytesIO()
+    Image.new("RGB", (40, 30), color="navy").save(data, format=image_format)
+    return data.getvalue()
+
+
+def public_dns(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.covers.socket.getaddrinfo", lambda *_args, **_kwargs: [(None, None, None, None, ("93.184.216.34", 443))])
+
+
 def test_create_get_and_list_albums_with_ordered_tracks() -> None:
     created = create_test_album()
     assert [track.position for track in created.tracks] == [1, 2]
@@ -81,6 +93,20 @@ def test_create_get_and_list_albums_with_ordered_tracks() -> None:
         listed = list_albums(session)
         assert [album.id for album in listed] == [created.id]
         assert listed[0].latest_revision is None
+
+
+def test_update_album_metadata_rejects_other_album_state() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        updated = update_album(album.id, AlbumUpdate(title="Grace (Remastered)", artist="Jeff Buckley", year=1995, release_type="ep"), session)
+    assert (updated.title, updated.artist, updated.year, updated.release_type.value) == ("Grace (Remastered)", "Jeff Buckley", 1995, "ep")
+    with SessionLocal() as session, pytest.raises(HTTPException) as missing:
+        update_album(99999, AlbumUpdate(title="Missing", artist="Nobody", year=None, release_type="album"), session)
+    assert missing.value.status_code == 404
+    with pytest.raises(ValidationError):
+        AlbumUpdate.model_validate({"title": "Grace", "artist": "Jeff Buckley", "year": 1994, "release_type": "album", "cover_filename": "not-allowed.webp"})
+    with pytest.raises(ValidationError):
+        AlbumUpdate.model_validate({"title": " ", "artist": "Jeff Buckley", "year": 999, "release_type": "album"})
 
 
 def test_album_list_includes_only_the_latest_revision_summary() -> None:
@@ -246,6 +272,72 @@ def test_cover_upload_rejects_oversized_file() -> None:
     with SessionLocal() as session, pytest.raises(HTTPException) as error:
         upload_cover(album.id, oversized, session)
     assert error.value.status_code == 413
+
+
+@pytest.mark.parametrize(("image_format", "content_type"), [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")])
+def test_download_cover_from_public_url_uses_local_cover_pipeline(monkeypatch, image_format: str, content_type: str) -> None:
+    public_dns(monkeypatch)
+    client = httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, headers={"content-type": content_type}, content=image_bytes(image_format))))
+    try:
+        filename = download_cover_from_url("https://covers.example/album", client)
+    finally:
+        client.close()
+    assert filename.endswith(".webp")
+    with Image.open(cover_dir() / filename) as stored:
+        assert stored.format == "WEBP"
+
+
+def test_download_cover_url_rejects_unsafe_and_invalid_responses(monkeypatch) -> None:
+    with pytest.raises(CoverError, match="http or https"):
+        download_cover_from_url("file:///tmp/cover.jpg")
+    monkeypatch.setattr("app.services.covers.socket.getaddrinfo", lambda *_args, **_kwargs: [(None, None, None, None, ("127.0.0.1", 80))])
+    with pytest.raises(CoverError, match="local or private"):
+        download_cover_from_url("http://localhost/cover.jpg")
+    monkeypatch.setattr("app.services.covers.socket.getaddrinfo", lambda *_args, **_kwargs: [(None, None, None, None, ("10.0.0.5", 80))])
+    with pytest.raises(CoverError, match="local or private"):
+        download_cover_from_url("http://10.0.0.5/cover.jpg")
+    public_dns(monkeypatch)
+    cases = [
+        httpx.Response(200, headers={"content-type": "text/html"}, content=b"not an image"),
+        httpx.Response(200, headers={"content-type": "image/jpeg"}, content=b"corrupt"),
+        httpx.Response(200, headers={"content-type": "image/jpeg", "content-length": str(MAX_COVER_BYTES + 1)}),
+    ]
+    for response in cases:
+        client = httpx.Client(transport=httpx.MockTransport(lambda _request, result=response: result))
+        try:
+            with pytest.raises(CoverError):
+                download_cover_from_url("https://covers.example/album", client)
+        finally:
+            client.close()
+
+
+def test_download_cover_url_revalidates_redirect_destinations(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.covers.socket.getaddrinfo",
+        lambda host, *_args, **_kwargs: [(None, None, None, None, (("127.0.0.1" if host == "localhost" else "93.184.216.34"), 80))],
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(302, headers={"location": "http://localhost/private.jpg"})))
+    try:
+        with pytest.raises(CoverError, match="local or private"):
+            download_cover_from_url("https://covers.example/album", client)
+    finally:
+        client.close()
+
+
+def test_import_cover_from_url_replaces_existing_cover(monkeypatch) -> None:
+    album = create_test_album()
+    first_filename = save_cover_data(image_bytes("PNG"), "image/png")
+    second_filename = save_cover_data(image_bytes("JPEG"), "image/jpeg")
+    with SessionLocal() as session:
+        stored = session.get(Album, album.id)
+        assert stored is not None
+        stored.cover_filename = first_filename
+        session.commit()
+        monkeypatch.setattr("app.main.download_cover_from_url", lambda _url: second_filename)
+        response = import_cover_from_url(album.id, CoverFromUrl(url="https://covers.example/replacement.jpg"), session)
+    assert response.cover_url is not None
+    assert not (cover_dir() / first_filename).exists()
+    assert (cover_dir() / second_filename).is_file()
 
 
 def test_replace_and_delete_cover_removes_old_file() -> None:

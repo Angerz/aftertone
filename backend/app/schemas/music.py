@@ -49,6 +49,33 @@ class AlbumCreate(APIModel):
         return tracks
 
 
+class AlbumUpdate(APIModel):
+    title: str = Field(min_length=1, max_length=300)
+    artist: str = Field(min_length=1, max_length=300)
+    year: int | None = Field(default=None, ge=1000, le=3000)
+    release_type: ReleaseType
+
+    @field_validator("title", "artist")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
+class CoverFromUrl(APIModel):
+    url: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def strip_url(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
 class TrackResponse(APIModel):
     id: int
     position: int
