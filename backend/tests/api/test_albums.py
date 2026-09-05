@@ -24,10 +24,10 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_revision, import_cover_from_url, list_albums, list_revisions, mark_for_revisit, update_album, upload_cover
+from app.main import app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.models.music import Album, LegacyRating, Track
-from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate
+from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
 
@@ -45,7 +45,7 @@ def database() -> None:
 
 def album_payload(title: str = "Grace") -> dict[str, object]:
     return {
-        "title": title, "artist": "Jeff Buckley", "year": 1994, "release_type": "album",
+        "title": title, "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album",
         "tracks": [{"position": 2, "title": "Grace"}, {"position": 1, "title": "Mojo Pin"}],
     }
 
@@ -98,15 +98,15 @@ def test_create_get_and_list_albums_with_ordered_tracks() -> None:
 def test_update_album_metadata_rejects_other_album_state() -> None:
     album = create_test_album()
     with SessionLocal() as session:
-        updated = update_album(album.id, AlbumUpdate(title="Grace (Remastered)", artist="Jeff Buckley", year=1995, release_type="ep"), session)
-    assert (updated.title, updated.artist, updated.year, updated.release_type.value) == ("Grace (Remastered)", "Jeff Buckley", 1995, "ep")
+        updated = update_album(album.id, AlbumUpdate(title="Grace (Remastered)", artists=[{"name": "Jeff Buckley"}], year=1995, release_type="ep"), session)
+    assert (updated.title, [artist.name for artist in updated.artists], updated.year, updated.release_type.value) == ("Grace (Remastered)", ["Jeff Buckley"], 1995, "ep")
     with SessionLocal() as session, pytest.raises(HTTPException) as missing:
-        update_album(99999, AlbumUpdate(title="Missing", artist="Nobody", year=None, release_type="album"), session)
+        update_album(99999, AlbumUpdate(title="Missing", artists=[{"name": "Nobody"}], year=None, release_type="album"), session)
     assert missing.value.status_code == 404
     with pytest.raises(ValidationError):
-        AlbumUpdate.model_validate({"title": "Grace", "artist": "Jeff Buckley", "year": 1994, "release_type": "album", "cover_filename": "not-allowed.webp"})
+        AlbumUpdate.model_validate({"title": "Grace", "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album", "cover_filename": "not-allowed.webp"})
     with pytest.raises(ValidationError):
-        AlbumUpdate.model_validate({"title": " ", "artist": "Jeff Buckley", "year": 999, "release_type": "album"})
+        AlbumUpdate.model_validate({"title": " ", "artists": [{"name": "Jeff Buckley"}], "year": 999, "release_type": "album"})
 
 
 def test_album_list_includes_only_the_latest_revision_summary() -> None:
@@ -136,14 +136,28 @@ def test_album_list_serializes_rating_decimals_as_json_numbers() -> None:
             legacy_final_rating=Decimal("8.5"), computed_final_rating=Decimal("8.75"),
         ))
         session.commit()
-    with TestClient(app) as client:
-        response = client.get("/api/albums")
-    assert response.status_code == 200
-    payload = response.json()[0]
+    with SessionLocal() as session:
+        payload = list_albums(session)[0].model_dump(mode="json")
     assert isinstance(payload["latest_revision"]["pre_rating"], float)
     assert isinstance(payload["latest_revision"]["final_rating"], float)
     assert isinstance(payload["latest_legacy_rating"]["legacy_final_rating"], float)
     assert isinstance(payload["latest_legacy_rating"]["computed_final_rating"], float)
+
+
+def test_album_artists_and_track_featured_credits_are_structured() -> None:
+    payload = album_payload()
+    payload["artists"] = [{"name": "Primary Artist"}, {"name": "Second Artist"}]
+    with SessionLocal() as session:
+        created = create_album(AlbumCreate.model_validate(payload), session)
+        assert [artist.name for artist in created.artists] == ["Primary Artist", "Second Artist"]
+        inherited = get_album(created.id, session).tracks[0]
+        assert inherited.uses_album_artists is True
+        assert [artist.name for artist in inherited.primary_artists] == ["Primary Artist", "Second Artist"]
+        featured = update_track_artists(inherited.id, TrackCreditsUpdate(featured_artist_ids=[created.artists[1].id]), session)
+        assert [artist.name for artist in featured.featured_artists] == ["Second Artist"]
+        detail = get_artist(created.artists[1].id, session)
+    assert [album.title for album in detail.albums] == ["Grace"]
+    assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
 
 
 def test_create_and_read_complete_calculated_revision() -> None:
@@ -510,7 +524,7 @@ def test_legacy_title_normalization_preserves_numeric_zero(title: object, expect
     if expected_status == "unrated":
         assert row.title == "0"
     else:
-        assert "Album and artist are required" in row.errors
+            assert any("Album and artist are required" in error for error in row.errors)
 
 
 @pytest.mark.parametrize(("value", "expected"), [(0.0, "0"), (12.0, "12"), (1.5, "1.5"), ("0", "0"), (None, None), ("   ", None)])

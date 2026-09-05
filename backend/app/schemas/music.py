@@ -25,14 +25,69 @@ class TrackCreate(APIModel):
         return value
 
 
+class ArtistCreate(APIModel):
+    name: str = Field(min_length=1, max_length=300)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
+class ArtistResponse(APIModel):
+    id: int
+    name: str
+    album_count: int = 0
+
+
+class ArtistAlbumResponse(APIModel):
+    id: int
+    title: str
+    year: int | None
+    release_type: ReleaseType
+    cover_url: str | None = None
+    artists: list[ArtistResponse]
+
+
+class TrackAppearanceResponse(APIModel):
+    track_id: int
+    track_title: str
+    album_id: int
+    album_title: str
+    role: str
+
+
+class ArtistDetailResponse(ArtistResponse):
+    albums: list[ArtistAlbumResponse]
+    featured_appearances: list[TrackAppearanceResponse]
+
+
+class ArtistCreditInput(APIModel):
+    artist_id: int | None = Field(default=None, ge=1)
+    name: str | None = Field(default=None, max_length=300)
+
+    @field_validator("name")
+    @classmethod
+    def strip_optional_name(cls, value: str | None) -> str | None:
+        return " ".join(value.split()) if value else None
+
+
+class TrackCreditsUpdate(APIModel):
+    primary_artist_ids: list[int] = Field(default_factory=list)
+    featured_artist_ids: list[int] = Field(default_factory=list)
+
+
 class AlbumCreate(APIModel):
     title: str = Field(min_length=1, max_length=300)
-    artist: str = Field(min_length=1, max_length=300)
+    artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
     release_type: ReleaseType = ReleaseType.ALBUM
     tracks: list[TrackCreate] = Field(min_length=1)
 
-    @field_validator("title", "artist")
+    @field_validator("title")
     @classmethod
     def strip_required_text(cls, value: str) -> str:
         value = value.strip()
@@ -51,11 +106,11 @@ class AlbumCreate(APIModel):
 
 class AlbumUpdate(APIModel):
     title: str = Field(min_length=1, max_length=300)
-    artist: str = Field(min_length=1, max_length=300)
+    artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
     release_type: ReleaseType
 
-    @field_validator("title", "artist")
+    @field_validator("title")
     @classmethod
     def strip_required_text(cls, value: str) -> str:
         value = value.strip()
@@ -80,6 +135,9 @@ class TrackResponse(APIModel):
     id: int
     position: int
     title: str
+    primary_artists: list[ArtistResponse] = Field(default_factory=list)
+    featured_artists: list[ArtistResponse] = Field(default_factory=list)
+    uses_album_artists: bool = True
 
 
 class LatestRevisionResponse(APIModel):
@@ -100,7 +158,7 @@ class LegacyRatingSummaryResponse(APIModel):
 class AlbumResponse(APIModel):
     id: int
     title: str
-    artist: str
+    artists: list[ArtistResponse]
     year: int | None
     release_type: ReleaseType
     created_at: datetime

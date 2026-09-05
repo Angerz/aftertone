@@ -17,12 +17,28 @@ class ReleaseType(str, enum.Enum):
     COMPILATION = "compilation"
 
 
+class TrackArtistRole(str, enum.Enum):
+    PRIMARY = "primary"
+    FEATURED = "featured"
+
+
+class Artist(Base):
+    __tablename__ = "artists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(300))
+    normalized_name: Mapped[str] = mapped_column(String(300), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    album_credits: Mapped[list[AlbumArtist]] = relationship(back_populates="artist")
+    track_credits: Mapped[list[TrackArtist]] = relationship(back_populates="artist")
+
+
 class Album(Base):
     __tablename__ = "albums"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(300))
-    artist: Mapped[str] = mapped_column(String(300))
     release_type: Mapped[ReleaseType] = mapped_column(
         Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]), default=ReleaseType.ALBUM
     )
@@ -36,6 +52,7 @@ class Album(Base):
     tracks: Mapped[list[Track]] = relationship(back_populates="album", cascade="all, delete-orphan")
     revisions: Mapped[list[RatingRevision]] = relationship(back_populates="album", cascade="all, delete-orphan")
     legacy_ratings: Mapped[list[LegacyRating]] = relationship(back_populates="album", cascade="all, delete-orphan")
+    artist_credits: Mapped[list[AlbumArtist]] = relationship(back_populates="album", cascade="all, delete-orphan")
 
 
 class Track(Base):
@@ -49,6 +66,34 @@ class Track(Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     album: Mapped[Album] = relationship(back_populates="tracks")
+    artist_credits: Mapped[list[TrackArtist]] = relationship(back_populates="track", cascade="all, delete-orphan")
+
+
+class AlbumArtist(Base):
+    __tablename__ = "album_artists"
+    __table_args__ = (UniqueConstraint("album_id", "artist_id", name="uq_album_artist"), UniqueConstraint("album_id", "position", name="uq_album_artist_position"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    album_id: Mapped[int] = mapped_column(ForeignKey("albums.id", ondelete="CASCADE"))
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="RESTRICT"))
+    position: Mapped[int] = mapped_column(Integer)
+
+    album: Mapped[Album] = relationship(back_populates="artist_credits")
+    artist: Mapped[Artist] = relationship(back_populates="album_credits")
+
+
+class TrackArtist(Base):
+    __tablename__ = "track_artists"
+    __table_args__ = (UniqueConstraint("track_id", "artist_id", "role", name="uq_track_artist_role"), UniqueConstraint("track_id", "role", "position", name="uq_track_artist_role_position"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="RESTRICT"))
+    role: Mapped[TrackArtistRole] = mapped_column(Enum(TrackArtistRole, values_callable=lambda enum: [item.value for item in enum]))
+    position: Mapped[int] = mapped_column(Integer)
+
+    track: Mapped[Track] = relationship(back_populates="artist_credits")
+    artist: Mapped[Artist] = relationship(back_populates="track_credits")
 
 
 class RatingRevision(Base):

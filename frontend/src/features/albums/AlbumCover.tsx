@@ -1,7 +1,8 @@
 import { mediaUrl } from "../../api/client";
 import type { Album } from "../../api/types";
+import { formatArtistNames } from "../artists/artistDisplay";
 
-const initials = (album: Album) => `${album.title[0] ?? "A"}${album.artist[0] ?? "T"}`.toUpperCase();
+const initials = (album: Album) => `${album.title[0] ?? "A"}${formatArtistNames(album.artists)[0] ?? "T"}`.toUpperCase();
 
 export function AlbumCover({ album, className = "" }: { album: Album; className?: string }) {
   if (album.cover_url) return <img className={`album-cover ${className}`} src={mediaUrl(album.cover_url)} alt={`Cover art for ${album.title}`} />;
