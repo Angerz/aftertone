@@ -18,7 +18,7 @@ export function EditAlbumPage({ albumId, onCancel, onSaved }: { albumId: number;
 
   useEffect(() => {
     Promise.all([getAlbum(albumId), listArtists()]).then(([loaded, artistList]) => {
-      setAlbum(loaded); setCatalogueArtists(artistList); setTitle(loaded.title);
+      setAlbum(loaded); setCatalogueArtists(artistList.items); setTitle(loaded.title);
       setArtists(loaded.artists.map((artist) => artist.name)); setYear(loaded.year?.toString() ?? ""); setReleaseType(loaded.release_type);
       setCredits(Object.fromEntries(loaded.tracks.map((track) => [track.id, {
         primary: track.uses_album_artists ? [] : track.primary_artists.map((artist) => artist.id),
