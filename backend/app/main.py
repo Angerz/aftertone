@@ -154,7 +154,7 @@ def album_filters(year: int | None, decade: int | None, search: str | None):
 
 @app.get("/api/albums", response_model=PaginatedResponse[AlbumResponse], tags=["albums"])
 def list_albums(
-    page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 24,
+    page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 25,
     year: Annotated[int | None, Query(ge=1000, le=3000)] = None, decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
     search: str | None = None, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating",
     session: Session = Depends(get_session),
