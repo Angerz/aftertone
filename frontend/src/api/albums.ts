@@ -1,6 +1,8 @@
 import { request } from "./client";
-import type { Album, AlbumCreate, AlbumUpdate, Track, TrackCreditsUpdate } from "./types";
-export const listAlbums = () => request<Album[]>("/api/albums");
+import type { Album, AlbumCreate, AlbumFacets, AlbumUpdate, PaginatedResponse, Track, TrackCreditsUpdate } from "./types";
+export interface AlbumListParams { page?: number; page_size?: number; year?: number; decade?: number; search?: string; sort?: "rating" | "recent" | "year" | "artist" | "title" }
+export const listAlbums = (params: AlbumListParams = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); }); return request<PaginatedResponse<Album>>(`/api/albums${query.size ? `?${query}` : ""}`); };
+export const getAlbumFacets = () => request<AlbumFacets>("/api/albums/facets");
 export const getAlbum = (id: number) => request<Album>(`/api/albums/${id}`);
 export const createAlbum = (payload: AlbumCreate) => request<Album>("/api/albums", { method: "POST", body: JSON.stringify(payload) });
 export const updateAlbum = (id: number, payload: AlbumUpdate) => request<Album>(`/api/albums/${id}`, { method: "PATCH", body: JSON.stringify(payload) });

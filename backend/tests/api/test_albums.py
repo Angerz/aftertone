@@ -24,7 +24,7 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
+from app.main import album_facets, app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.models.music import Album, LegacyRating, Track
 from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate
@@ -90,9 +90,9 @@ def test_create_get_and_list_albums_with_ordered_tracks() -> None:
     with SessionLocal() as session:
         found = get_album(created.id, session)
         assert [track.title for track in found.tracks] == ["Mojo Pin", "Grace"]
-        listed = list_albums(session)
-        assert [album.id for album in listed] == [created.id]
-        assert listed[0].latest_revision is None
+        listed = list_albums(session=session)
+        assert [album.id for album in listed.items] == [created.id]
+        assert listed.items[0].latest_revision is None
 
 
 def test_update_album_metadata_rejects_other_album_state() -> None:
@@ -118,7 +118,7 @@ def test_album_list_includes_only_the_latest_revision_summary() -> None:
     second_data["emotion"] = "5"
     with SessionLocal() as session:
         second = create_revision(album.id, RatingRevisionCreate.model_validate(second_data), session)
-        latest = list_albums(session)[0].latest_revision
+        latest = list_albums(session=session).items[0].latest_revision
     assert latest is not None
     assert latest.id == second.id
     assert latest.id != first.id
@@ -137,7 +137,7 @@ def test_album_list_serializes_rating_decimals_as_json_numbers() -> None:
         ))
         session.commit()
     with SessionLocal() as session:
-        payload = list_albums(session)[0].model_dump(mode="json")
+        payload = list_albums(session=session).items[0].model_dump(mode="json")
     assert isinstance(payload["latest_revision"]["pre_rating"], float)
     assert isinstance(payload["latest_revision"]["final_rating"], float)
     assert isinstance(payload["latest_legacy_rating"]["legacy_final_rating"], float)
@@ -158,6 +158,38 @@ def test_album_artists_and_track_featured_credits_are_structured() -> None:
         detail = get_artist(created.artists[1].id, session)
     assert [album.title for album in detail.albums] == ["Grace"]
     assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
+
+
+def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
+    rows = [("Nineties", 2019, ["Alpha"]), ("First", 2020, ["Alpha", "Guest"]), ("Second", 2024, ["Beta"]), ("Last", 2029, ["Gamma"]), ("Future", 2030, ["Delta"]), ("Unknown", None, ["Unknown"])]
+    with SessionLocal() as session:
+        for title, year, artists in rows:
+            create_album(AlbumCreate.model_validate({"title": title, "artists": [{"name": artist} for artist in artists], "year": year, "release_type": "album", "tracks": [{"position": 1, "title": "Track"}]}), session)
+        first = list_albums(page=1, page_size=2, sort="title", session=session)
+        second = list_albums(page=2, page_size=2, sort="title", session=session)
+        twenty_twenty = list_albums(decade=2020, page=1, page_size=10, sort="year", session=session)
+        artist_search = list_albums(search="guest", session=session)
+        empty = list_albums(page=99, page_size=2, session=session)
+        facets = album_facets(session)
+    assert first.total == 6 and first.total_pages == 3 and [item.title for item in first.items] == ["First", "Future"]
+    assert [item.title for item in second.items] == ["Last", "Nineties"]
+    assert [item.title for item in twenty_twenty.items] == ["Last", "Second", "First"]
+    assert [item.title for item in artist_search.items] == ["First"]
+    assert empty.items == [] and empty.page == 99
+    assert facets.decades == {2010: [2019], 2020: [2020, 2024, 2029], 2030: [2030]}
+
+
+def test_artist_pagination_search_and_ordering() -> None:
+    with SessionLocal() as session:
+        for name in ["Zulu", "Alpha", "Beta"]:
+            create_album(AlbumCreate.model_validate({"title": f"{name} album", "artists": [{"name": name}], "year": 2020, "release_type": "album", "tracks": [{"position": 1, "title": "Track"}]}), session)
+        first = list_artists(page=1, page_size=2, session=session)
+        searched = list_artists(search="et", session=session)
+        empty = list_artists(page=9, page_size=2, session=session)
+    assert [item.name for item in first.items] == ["Alpha", "Beta"]
+    assert first.total == 3 and first.total_pages == 2
+    assert [item.name for item in searched.items] == ["Beta"]
+    assert empty.items == [] and empty.total == 3
 
 
 def test_create_and_read_complete_calculated_revision() -> None:

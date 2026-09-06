@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -10,6 +11,17 @@ from app.models.music import ReleaseType
 
 class APIModel(BaseModel):
     model_config = ConfigDict(extra="forbid", json_encoders={Decimal: float})
+
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(APIModel, Generic[T]):
+    items: list[T]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 
 class TrackCreate(APIModel):
@@ -169,6 +181,10 @@ class AlbumResponse(APIModel):
     revisit_reason: str | None = None
     revisit_marked_at: datetime | None = None
     latest_legacy_rating: LegacyRatingSummaryResponse | None = None
+
+
+class AlbumFacetsResponse(APIModel):
+    decades: dict[int, list[int]]
 
 
 class RevisitUpdate(APIModel):

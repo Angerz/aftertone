@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { getArtist, listArtists } from "../../api/artists";
-import type { Artist, ArtistDetail } from "../../api/types";
+import type { Artist, ArtistDetail, PaginatedResponse } from "../../api/types";
 import { formatArtistNames } from "./artistDisplay";
 
+function ArtistPagination({ result, onPage }: { result: PaginatedResponse<Artist>; onPage: (page: number) => void }) {
+  if (result.total_pages <= 1) return null;
+  return <nav className="pagination" aria-label="Artist pagination"><button disabled={result.page === 1} onClick={() => onPage(result.page - 1)}>Previous</button><span>Page {result.page} of {result.total_pages}</span><button disabled={result.page === result.total_pages} onClick={() => onPage(result.page + 1)}>Next</button></nav>;
+}
+
 export function ArtistsPage({ onBack, onOpen }: { onBack: () => void; onOpen: (id: number) => void }) {
-  const [artists, setArtists] = useState<Artist[]>([]); const [error, setError] = useState<string | null>(null);
-  useEffect(() => { listArtists().then(setArtists).catch((cause: Error) => setError(cause.message)); }, []);
-  return <main className="page narrow"><button className="back" onClick={onBack}>← Library</button><p className="eyebrow">Catalogue</p><h1>Artists</h1>{error && <p className="notice error">{error}</p>}<ol className="album-list">{artists.map((artist) => <li key={artist.id}><button className="album-link" onClick={() => onOpen(artist.id)}><strong>{artist.name}</strong><span>{artist.album_count ?? 0} album{artist.album_count === 1 ? "" : "s"}</span></button></li>)}</ol></main>;
+  const [result, setResult] = useState<PaginatedResponse<Artist> | null>(null); const [search, setSearch] = useState(""); const [page, setPage] = useState(1); const [error, setError] = useState<string | null>(null);
+  useEffect(() => { let active = true; listArtists({ page, search }).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }); return () => { active = false; }; }, [page, search]);
+  return <main className="page narrow"><button className="back" onClick={onBack}>← Library</button><p className="eyebrow">Catalogue</p><h1>Artists</h1><label>Search artists<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label>{error && <p className="notice error">{error}</p>}<ol className="album-list">{result?.items.map((artist) => <li key={artist.id}><button className="album-link" onClick={() => onOpen(artist.id)}><strong>{artist.name}</strong><span>{artist.album_count ?? 0} album{artist.album_count === 1 ? "" : "s"}</span></button></li>)}</ol>{result && <ArtistPagination result={result} onPage={setPage} />}</main>;
 }
 
 export function ArtistPage({ artistId, onBack, onAlbum }: { artistId: number; onBack: () => void; onAlbum: (id: number) => void }) {

@@ -1,0 +1,6 @@
+…/aftertone/backend on  main !? .......................................via    
+❯ .venv/bin/uvicorn app.main:app   --host 127.0.0.1   --port 8017   --reload
+
+
+…/aftertone/frontend on  main !? ...............................via  v20.19.2 
+❯ npm run dev -- --host 127.0.0.1 --port 5177

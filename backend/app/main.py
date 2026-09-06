@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections.abc import Generator
 from datetime import datetime, timezone
 import json
+from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
@@ -17,6 +18,7 @@ from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
     AlbumCreate,
+    AlbumFacetsResponse,
     AlbumUpdate,
     CoverFromUrl,
     AlbumResponse,
@@ -35,6 +37,7 @@ from app.schemas.music import (
     LegacyReconciliationResponse,
     LegacyRatingDetailResponse,
     LatestRevisionResponse,
+    PaginatedResponse,
     RatingRevisionCreate,
     RatingRevisionResponse,
     RatingRevisionSummaryResponse,
@@ -133,8 +136,29 @@ def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) 
     return album_response(album)
 
 
-@app.get("/api/albums", response_model=list[AlbumResponse], tags=["albums"])
-def list_albums(session: Session = Depends(get_session)) -> list[AlbumResponse]:
+def album_filters(year: int | None, decade: int | None, search: str | None):
+    filters = []
+    if year is not None:
+        filters.append(Album.release_year == year)
+    if decade is not None:
+        filters.extend([Album.release_year >= decade, Album.release_year <= decade + 9])
+    if search and (term := search.strip()):
+        pattern = f"%{term.casefold()}%"
+        artist_match = select(AlbumArtist.id).join(Artist).where(
+            AlbumArtist.album_id == Album.id,
+            func.lower(Artist.name).like(pattern),
+        ).exists()
+        filters.append(or_(func.lower(Album.title).like(pattern), artist_match))
+    return filters
+
+
+@app.get("/api/albums", response_model=PaginatedResponse[AlbumResponse], tags=["albums"])
+def list_albums(
+    page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 24,
+    year: Annotated[int | None, Query(ge=1000, le=3000)] = None, decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+    search: str | None = None, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating",
+    session: Session = Depends(get_session),
+) -> PaginatedResponse[AlbumResponse]:
     latest_revision_id = (
         select(RatingRevision.id)
         .where(RatingRevision.album_id == Album.id)
@@ -147,19 +171,47 @@ def list_albums(session: Session = Depends(get_session)) -> list[AlbumResponse]:
         select(LegacyRating.id).where(LegacyRating.album_id == Album.id)
         .order_by(LegacyRating.imported_at.desc(), LegacyRating.id.desc()).limit(1).correlate(Album).scalar_subquery()
     )
+    filters = album_filters(year, decade, search)
+    total = session.scalar(select(func.count(Album.id)).where(*filters)) or 0
+    rating_value = func.coalesce(RatingRevision.final_rating, LegacyRating.computed_final_rating, LegacyRating.legacy_final_rating)
+    recent_value = func.coalesce(RatingRevision.created_at, LegacyRating.imported_at)
+    first_artist_name = select(Artist.name).join(AlbumArtist).where(AlbumArtist.album_id == Album.id).order_by(AlbumArtist.position).limit(1).scalar_subquery()
+    ordering = {
+        "rating": (rating_value.desc().nullslast(), Album.title.asc(), Album.id.asc()),
+        "recent": (recent_value.desc().nullslast(), Album.title.asc(), Album.id.asc()),
+        "year": (Album.release_year.desc().nullslast(), Album.title.asc(), Album.id.asc()),
+        "artist": (func.lower(first_artist_name).asc(), Album.title.asc(), Album.id.asc()),
+        "title": (func.lower(Album.title).asc(), Album.id.asc()),
+    }[sort]
     rows = session.execute(
         select(Album, RatingRevision, LegacyRating)
         .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
         .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
+        .where(*filters)
         .options(
             selectinload(Album.tracks).selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
             selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
         )
-        .order_by(Album.id)
+        .order_by(*ordering)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     ).all()
     for album, _, _ in rows:
         album.tracks.sort(key=lambda track: track.position)
-    return [album_response(album, latest_revision, latest_legacy) for album, latest_revision, latest_legacy in rows]
+    return PaginatedResponse(
+        items=[album_response(album, latest_revision, latest_legacy) for album, latest_revision, latest_legacy in rows],
+        page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
+    )
+
+
+@app.get("/api/albums/facets", response_model=AlbumFacetsResponse, tags=["albums"])
+def album_facets(session: Session = Depends(get_session)) -> AlbumFacetsResponse:
+    years = session.scalars(select(Album.release_year).where(Album.release_year.is_not(None)).distinct().order_by(Album.release_year)).all()
+    decades: dict[int, list[int]] = {}
+    for year in years:
+        assert year is not None
+        decades.setdefault(year // 10 * 10, []).append(year)
+    return AlbumFacetsResponse(decades=decades)
 
 
 @app.get("/api/albums/{album_id}", response_model=AlbumResponse, tags=["albums"])
@@ -191,10 +243,19 @@ def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends
     return album_response(album)
 
 
-@app.get("/api/artists", response_model=list[ArtistResponse], tags=["artists"])
-def list_artists(session: Session = Depends(get_session)) -> list[ArtistResponse]:
-    artists = session.scalars(select(Artist).order_by(Artist.name)).all()
-    return [ArtistResponse(id=artist.id, name=artist.name, album_count=len(artist.album_credits)) for artist in artists]
+@app.get("/api/artists", response_model=PaginatedResponse[ArtistResponse], tags=["artists"])
+def list_artists(
+    page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 50, search: str | None = None,
+    session: Session = Depends(get_session),
+) -> PaginatedResponse[ArtistResponse]:
+    filters = [func.lower(Artist.name).like(f"%{search.strip().casefold()}%")] if search and search.strip() else []
+    total = session.scalar(select(func.count(Artist.id)).where(*filters)) or 0
+    album_count = select(func.count(AlbumArtist.id)).where(AlbumArtist.artist_id == Artist.id).correlate(Artist).scalar_subquery()
+    rows = session.execute(select(Artist, album_count.label("album_count")).where(*filters).order_by(func.lower(Artist.name), Artist.id).offset((page - 1) * page_size).limit(page_size)).all()
+    return PaginatedResponse(
+        items=[ArtistResponse(id=artist.id, name=artist.name, album_count=count) for artist, count in rows],
+        page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
+    )
 
 
 @app.post("/api/artists", response_model=ArtistResponse, status_code=status.HTTP_201_CREATED, tags=["artists"])
