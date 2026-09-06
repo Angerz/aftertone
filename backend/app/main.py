@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
-from app.config import cover_dir, web_origin
+from app.config import cover_dir, web_origins
 from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, Track, TrackArtist, TrackArtistRole
 from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
@@ -50,7 +50,7 @@ from decimal import Decimal
 app = FastAPI(title="Aftertone API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[web_origin()],
+    allow_origins=web_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],

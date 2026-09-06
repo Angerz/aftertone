@@ -9,8 +9,18 @@ def database_url() -> str:
 
 
 def web_origin() -> str:
-    """The sole local web origin permitted to call the API during development."""
+    """The configured local web origin permitted to call the API during development."""
     return os.getenv("AFTERTONE_WEB_ORIGIN", "http://127.0.0.1:5177")
+
+
+def web_origins() -> list[str]:
+    """Allow the equivalent loopback hostname without broadening CORS access."""
+    origin = web_origin()
+    if origin.startswith("http://127.0.0.1:"):
+        return [origin, origin.replace("127.0.0.1", "localhost", 1)]
+    if origin.startswith("http://localhost:"):
+        return [origin, origin.replace("localhost", "127.0.0.1", 1)]
+    return [origin]
 
 
 def cover_dir() -> Path:
