@@ -23,3 +23,5 @@ backend/data/covers/
 .DS_Store
 
 frontend_template/
+
+*.xd
