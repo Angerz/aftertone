@@ -4,13 +4,13 @@ import { getLegacyRating, previewLegacyReconciliation, reconcileLegacyRating } f
 import type { Album, LegacyRatingDetail } from "../../api/types";
 import { parseTracklist } from "./tracklist";
 
-export function LegacyReconciliationPage({ albumId, onBack }: { albumId: number; onBack: () => void }) {
+export function LegacyReconciliationPage({ albumId, onBack, onReconciled }: { albumId: number; onBack: () => void; onReconciled: () => void }) {
   const [album, setAlbum] = useState<Album | null>(null);
   const [legacy, setLegacy] = useState<LegacyRatingDetail | null>(null);
   const [tracklistText, setTracklistText] = useState("");
   const [mappings, setMappings] = useState<string[]>([]);
   const [preview, setPreview] = useState<{ pre_rating: number | null; bad_experience: number | null; final_rating: number | null } | null>(null);
-  const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(true); const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(true);
 
   useEffect(() => {
     getAlbum(albumId).then(async (loaded) => {
@@ -35,13 +35,13 @@ export function LegacyReconciliationPage({ albumId, onBack }: { albumId: number;
   async function confirm() {
     if (!legacy || !valid) return;
     setBusy(true);
-    try { const result = await reconcileLegacyRating(legacy.id, trackTitles(), payload()); setDone(`Reconciled as revision #${result.revision_id}.`); } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); }
+    try { await reconcileLegacyRating(legacy.id, trackTitles(), payload()); onReconciled(); } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); }
   }
   if (busy && !album) return <main className="page"><p>Loading reconciliation…</p></main>;
   if (error && !album) return <main className="page"><button className="back" onClick={onBack}>← Album</button><p className="notice error">{error}</p></main>;
-  return <main className="page narrow"><button className="back" onClick={onBack}>← Album</button><p className="eyebrow">Legacy reconciliation</p><h1>{album?.title}</h1>{error && <p className="notice error">{error}</p>}{done && <p className="notice success">{done}</p>}
+  return <main className="page narrow"><button className="back" onClick={onBack}>← Album</button><p className="eyebrow">Legacy reconciliation</p><h1>{album?.title}</h1>{error && <p className="notice error">{error}</p>}
     <section className="form-section"><h2>1. Real tracklist</h2>{album && !album.tracks.length && <><textarea rows={5} value={tracklistText} onChange={(event) => { setTracklistText(event.target.value); setPreview(null); }} placeholder="One track per line" /><p>Tracks will be created only when reconciliation is confirmed.</p></>}{album?.tracks.length ? <p>Using the existing real tracklist.</p> : null}</section>
     <section className="form-section"><h2>2. Map legacy scores manually</h2><p>Assigned {mapped} / {legacy?.extracted_scores.length ?? 0} · Unrated tracks: {Math.max(0, tracks.length - mapped)}</p>{legacy?.extracted_scores.map((score, index) => <label key={index}>Legacy score {index + 1} — {score}<select value={mappings[index] ?? ""} onChange={(event) => { setMappings((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value)); setPreview(null); }}><option value="">Choose a real track</option>{tracks.map((track) => <option key={track.id} value={track.id}>{track.position}. {track.title}</option>)}</select></label>)}</section>
-    <section className="form-section"><h2>3. Preview and confirm</h2><p>All legacy scores must be assigned once. Unmapped real tracks remain explicitly unrated, not scored zero.</p><button onClick={calculatePreview} disabled={!valid || busy || !!done}>Calculate authoritative preview</button>{preview && <p>Reconstructed: pre {preview.pre_rating ?? "—"}, bad experience {preview.bad_experience ?? "—"}, final {preview.final_rating ?? "—"}. Legacy final: {legacy?.legacy_final_rating ?? "—"}.</p>}<button onClick={confirm} disabled={!valid || busy || !!done}>{busy ? "Reconciling…" : "Create native revision"}</button></section>
+    <section className="form-section"><h2>3. Preview and confirm</h2><p>All legacy scores must be assigned once. Unmapped real tracks remain explicitly unrated, not scored zero.</p><button onClick={calculatePreview} disabled={!valid || busy}>Calculate authoritative preview</button>{preview && <p>Reconstructed: pre {preview.pre_rating ?? "—"}, bad experience {preview.bad_experience ?? "—"}, final {preview.final_rating ?? "—"}. Legacy final: {legacy?.legacy_final_rating ?? "—"}.</p>}<button onClick={confirm} disabled={!valid || busy}>{busy ? "Reconciling…" : "Create native revision"}</button></section>
   </main>;
 }
