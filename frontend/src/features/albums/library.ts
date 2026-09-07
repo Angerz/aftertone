@@ -3,6 +3,11 @@ import { formatArtistNames } from "../artists/artistDisplay";
 
 export type LibrarySort = "rating" | "year" | "artist" | "title" | "recent";
 
+export function formatLibraryRating(value: number): string {
+  const rounded = Math.min(10, Math.round(value * 10) / 10);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 export function filterAndSortAlbums(albums: Album[], query: string, sort: LibrarySort): Album[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filtered = normalizedQuery ? albums.filter((album) => `${album.title} ${formatArtistNames(album.artists)}`.toLocaleLowerCase().includes(normalizedQuery)) : albums;

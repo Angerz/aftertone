@@ -5,6 +5,8 @@ import { AlbumCard } from "./AlbumCard";
 import type { LibrarySort } from "./library";
 import { buildAlbumQueryParams, parseLibraryNavigation, type LibraryNavigation } from "./pagination";
 
+const libraryPageSize = 25;
+
 function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
   if (totalPages <= 1) return null;
   const pages = Array.from({ length: totalPages }, (_, index) => index + 1).filter((item) => item === 1 || item === totalPages || Math.abs(item - page) <= 2);
@@ -17,7 +19,7 @@ export function AlbumsPage({ onCreate, onImport, onArtists, onOpen }: { onCreate
   const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(true);
   useEffect(() => { getAlbumFacets().then(setFacets).catch((cause: Error) => setError(cause.message)); }, []);
   useEffect(() => { const onPopState = () => setNavigation(parseLibraryNavigation()); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
-  useEffect(() => { let active = true; setLoading(true); setError(null); listAlbums(navigation).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }).finally(() => { if (active) setLoading(false); }); const params = buildAlbumQueryParams(navigation); window.history.replaceState({}, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); return () => { active = false; }; }, [navigation]);
+  useEffect(() => { let active = true; setLoading(true); setError(null); listAlbums({ ...navigation, page_size: libraryPageSize }).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }).finally(() => { if (active) setLoading(false); }); const params = buildAlbumQueryParams(navigation); window.history.replaceState({}, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); return () => { active = false; }; }, [navigation]);
   const change = (next: Partial<LibraryNavigation>, resetPage = true) => setNavigation((current) => ({ ...current, ...next, page: resetPage ? 1 : next.page ?? current.page }));
   const decades = Object.keys(facets.decades).map(Number).sort((left, right) => left - right);
   const years = navigation.decade ? facets.decades[String(navigation.decade)] ?? [] : [];
