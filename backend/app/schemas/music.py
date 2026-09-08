@@ -116,11 +116,25 @@ class AlbumCreate(APIModel):
         return tracks
 
 
+class TrackUpdate(APIModel):
+    id: int | None = Field(default=None, ge=1)
+    title: str = Field(min_length=1, max_length=300)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("title must not be empty")
+        return value
+
+
 class AlbumUpdate(APIModel):
     title: str = Field(min_length=1, max_length=300)
     artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
     release_type: ReleaseType
+    tracks: list[TrackUpdate] | None = Field(default=None, min_length=1)
 
     @field_validator("title")
     @classmethod

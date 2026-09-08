@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
 from app.config import cover_dir, web_origins
-from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, Track, TrackArtist, TrackArtistRole
+from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, Track, TrackArtist, TrackArtistRole, TrackRatingRevision
 from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
@@ -27,7 +27,7 @@ from app.schemas.music import (
     ArtistDetailResponse,
     ArtistResponse,
     TrackAppearanceResponse,
-    TrackCreditsUpdate,
+    TrackCreditsUpdate, TrackUpdate,
     LegacyImportCommitResponse,
     LegacyImportPreviewResponse,
     LegacyImportPreviewRowResponse,
@@ -235,12 +235,37 @@ def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends
     album.release_type = payload.release_type
     try:
         set_album_artists(session, album, artist_ids_from_inputs(session, payload.artists))
+        if payload.tracks is not None:
+            update_album_tracks(session, album, payload.tracks)
         session.commit()
         session.refresh(album)
     except Exception:
         session.rollback()
         raise
     return album_response(album)
+
+
+def update_album_tracks(session: Session, album: Album, tracks: list[TrackUpdate]) -> None:
+    current = {track.id: track for track in album.tracks}
+    incoming_ids = [track.id for track in tracks if track.id is not None]
+    if len(incoming_ids) != len(set(incoming_ids)) or any(track_id not in current for track_id in incoming_ids):
+        raise HTTPException(status_code=422, detail="Tracklist contains invalid track ids.")
+
+    removed = set(current) - set(incoming_ids)
+    if removed and session.scalar(select(TrackRatingRevision.id).where(TrackRatingRevision.track_id.in_(removed)).limit(1)) is not None:
+        raise HTTPException(status_code=422, detail="Tracks used by native rating revisions cannot be deleted.")
+
+    for track in current.values():
+        track.position += 10_000
+    session.flush()
+    for position, item in enumerate(tracks, start=1):
+        track = current[item.id] if item.id is not None else Track(album=album, position=position, title=item.title)
+        track.position = position
+        track.title = item.title
+        if item.id is None:
+            session.add(track)
+    for track_id in removed:
+        session.delete(current[track_id])
 
 
 @app.get("/api/artists", response_model=PaginatedResponse[ArtistResponse], tags=["artists"])

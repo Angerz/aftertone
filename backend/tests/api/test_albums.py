@@ -27,7 +27,7 @@ from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, pa
 from app.main import album_facets, app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.models.music import Album, LegacyRating, Track
-from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate
+from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
 
@@ -107,6 +107,17 @@ def test_update_album_metadata_rejects_other_album_state() -> None:
         AlbumUpdate.model_validate({"title": "Grace", "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album", "cover_filename": "not-allowed.webp"})
     with pytest.raises(ValidationError):
         AlbumUpdate.model_validate({"title": " ", "artists": [{"name": "Jeff Buckley"}], "year": 999, "release_type": "album"})
+
+
+def test_update_album_tracklist_reorders_renames_and_preserves_revision_snapshots() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        revision = create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        snapshots = [(item.track_id, item.title, item.position) for item in revision.tracks]
+        updated = update_album(album.id, AlbumUpdate(title=album.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", tracks=[TrackUpdate(id=album.tracks[1].id, title="Grace renamed"), TrackUpdate(id=album.tracks[0].id, title="Mojo Pin renamed"), TrackUpdate(title="New track")]), session)
+        stored_revision = get_revision(album.id, revision.id, session)
+    assert [(track.title, track.position) for track in updated.tracks] == [("Grace renamed", 1), ("Mojo Pin renamed", 2), ("New track", 3)]
+    assert [(item.track_id, item.title, item.position) for item in stored_revision.tracks] == snapshots
 
 
 def test_album_list_includes_only_the_latest_revision_summary() -> None:

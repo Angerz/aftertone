@@ -15,7 +15,8 @@ export interface Album {
 }
 export interface TrackCreate { position: number; title: string }
 export interface AlbumCreate { title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType; tracks: TrackCreate[] }
-export interface AlbumUpdate { title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType }
+export interface TrackUpdate { id?: number; title: string }
+export interface AlbumUpdate { title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType; tracks?: TrackUpdate[] }
 export interface TrackCreditsUpdate { primary_artist_ids: number[]; featured_artist_ids: number[] }
 export interface TrackRatingRevision { track_id: number; title: string; position: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
 export interface TrackRatingRevisionCreate { track_id: number; score: number; include_in_pre_rating: boolean; notes: string | null }
