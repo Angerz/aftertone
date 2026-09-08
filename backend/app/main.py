@@ -96,6 +96,17 @@ def album_response(album: Album, latest_revision: RatingRevision | None = None, 
     )
 
 
+def effective_album_rating(album: Album) -> Decimal | None:
+    """Return the rating currently shown for an album outside its detail history."""
+    latest_revision = max(album.revisions, key=lambda revision: (revision.created_at, revision.id), default=None)
+    if latest_revision is not None:
+        return latest_revision.final_rating
+    latest_legacy = max(album.legacy_ratings, key=lambda legacy: (legacy.imported_at, legacy.id), default=None)
+    if latest_legacy is None:
+        return None
+    return latest_legacy.computed_final_rating if latest_legacy.computed_final_rating is not None else latest_legacy.legacy_final_rating
+
+
 def revision_response(revision: RatingRevision) -> RatingRevisionResponse:
     return RatingRevisionResponse(
         id=revision.id, album_id=revision.album_id, created_at=revision.created_at,
@@ -294,6 +305,8 @@ def create_artist(payload: ArtistCreate, session: Session = Depends(get_session)
 def get_artist(artist_id: int, session: Session = Depends(get_session)) -> ArtistDetailResponse:
     artist = session.scalar(select(Artist).options(
         selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
+        selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.revisions),
+        selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.legacy_ratings),
         selectinload(Artist.track_credits).selectinload(TrackArtist.track).selectinload(Track.album),
     ).where(Artist.id == artist_id))
     if artist is None:
@@ -305,6 +318,7 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
             id=album.id, title=album.title, year=album.release_year, release_type=album.release_type,
             cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
             artists=[ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in sorted(album.artist_credits, key=lambda credit: credit.position)],
+            rating=effective_album_rating(album),
         ) for album in albums],
         featured_appearances=[TrackAppearanceResponse(
             track_id=credit.track.id, track_title=credit.track.title, album_id=credit.track.album.id,

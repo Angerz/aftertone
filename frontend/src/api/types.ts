@@ -2,7 +2,7 @@ export type ReleaseType = "album" | "ep" | "mixtape" | "compilation";
 export interface PaginatedResponse<T> { items: T[]; page: number; page_size: number; total: number; total_pages: number }
 export interface Artist { id: number; name: string; album_count?: number }
 export interface ArtistCreditInput { artist_id?: number; name?: string }
-export interface ArtistAlbum { id: number; title: string; year: number | null; release_type: ReleaseType; cover_url: string | null; artists: Artist[] }
+export interface ArtistAlbum { id: number; title: string; year: number | null; release_type: ReleaseType; cover_url: string | null; artists: Artist[]; rating: number | null }
 export interface TrackAppearance { track_id: number; track_title: string; album_id: number; album_title: string; role: "featured" }
 export interface ArtistDetail extends Artist { albums: ArtistAlbum[]; featured_appearances: TrackAppearance[] }
 

@@ -62,6 +62,7 @@ class ArtistAlbumResponse(APIModel):
     release_type: ReleaseType
     cover_url: str | None = None
     artists: list[ArtistResponse]
+    rating: Decimal | None = None
 
 
 class TrackAppearanceResponse(APIModel):

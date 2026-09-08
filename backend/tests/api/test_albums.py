@@ -168,7 +168,16 @@ def test_album_artists_and_track_featured_credits_are_structured() -> None:
         assert [artist.name for artist in featured.featured_artists] == ["Second Artist"]
         detail = get_artist(created.artists[1].id, session)
     assert [album.title for album in detail.albums] == ["Grace"]
+    assert detail.albums[0].rating is None
     assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
+
+
+def test_artist_projects_include_the_current_effective_rating() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        revision = create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        detail = get_artist(album.artists[0].id, session)
+    assert detail.albums[0].rating == revision.final_rating
 
 
 def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
