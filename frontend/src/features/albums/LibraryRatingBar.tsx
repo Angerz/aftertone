@@ -1,16 +1,15 @@
-export type LibraryRatingTier = "low" | "mid" | "high";
+import { getDisplayedRatingTier, type RatingTier } from "./ratingTier";
 
 export interface LibraryRatingMeter {
   percent: number;
-  tier: LibraryRatingTier;
+  tier: RatingTier;
 }
 
 export function getLibraryRatingMeter(value: number | null | undefined): LibraryRatingMeter | null {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
 
   const percent = Number((Math.max(0, Math.min(10, value)) * 10).toFixed(2));
-  const displayedRating = Math.round(value * 10) / 10;
-  return { percent, tier: displayedRating >= 7 ? "high" : displayedRating >= 5 ? "mid" : "low" };
+  return { percent, tier: getDisplayedRatingTier(value)! };
 }
 
 export function LibraryRatingBar({ value, title }: { value: number; title?: string }) {

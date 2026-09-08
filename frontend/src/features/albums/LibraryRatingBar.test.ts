@@ -8,6 +8,7 @@ describe("getLibraryRatingMeter", () => {
     [9.9, { percent: 99, tier: "high" }],
     [7.1, { percent: 71, tier: "high" }],
     [7, { percent: 70, tier: "high" }],
+    [6.996, { percent: 69.96, tier: "high" }],
     [6.999, { percent: 69.99, tier: "high" }],
     [6.9, { percent: 69, tier: "mid" }],
     [5, { percent: 50, tier: "mid" }],
