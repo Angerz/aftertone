@@ -1,4 +1,4 @@
-export type ReleaseType = "album" | "ep" | "mixtape" | "compilation";
+export type ReleaseType = "album" | "ep" | "mixtape" | "compilation" | "live" | "reissue";
 export interface PaginatedResponse<T> { items: T[]; page: number; page_size: number; total: number; total_pages: number }
 export interface Artist { id: number; name: string; album_count?: number }
 export interface ArtistCreditInput { artist_id?: number; name?: string }

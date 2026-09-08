@@ -6,7 +6,7 @@ import { CoverControls } from "./CoverControls";
 import { parseTracklistText } from "./tracklistEditor";
 import { ArtistSearchPicker } from "../artists/ArtistSearchPicker";
 
-const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation"];
+const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
 type Credits = Record<number, { primary: Artist[]; featured: Artist[] }>;
 
 export function EditAlbumPage({ albumId, onCancel, onSaved }: { albumId: number; onCancel: () => void; onSaved: () => void }) {

@@ -21,8 +21,8 @@ describe("artist projects", () => {
   });
 
   it("groups only populated release types in editorial order", () => {
-    const groups = groupArtistProjects([project({ release_type: "mixtape" }), project({ id: 2, release_type: "ep" })]);
-    expect(groups.map((group) => group.label)).toEqual(["EPs", "Mixtapes"]);
+    const groups = groupArtistProjects([project({ release_type: "reissue" }), project({ id: 2, release_type: "live" }), project({ id: 3, release_type: "mixtape" }), project({ id: 4, release_type: "ep" })]);
+    expect(groups.map((group) => group.label)).toEqual(["EPs", "Mixtapes", "Live", "Reissues"]);
   });
 
   it("sorts projects by year descending, then title, with unknown years last", () => {

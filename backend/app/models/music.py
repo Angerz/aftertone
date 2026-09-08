@@ -15,6 +15,8 @@ class ReleaseType(str, enum.Enum):
     EP = "ep"
     MIXTAPE = "mixtape"
     COMPILATION = "compilation"
+    LIVE = "live"
+    REISSUE = "reissue"
 
 
 class TrackArtistRole(str, enum.Enum):

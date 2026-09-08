@@ -5,9 +5,11 @@ const releaseTypeLabels: Record<ReleaseType, string> = {
   ep: "EPs",
   mixtape: "Mixtapes",
   compilation: "Compilations",
+  live: "Live",
+  reissue: "Reissues",
 };
 
-const releaseTypeOrder: ReleaseType[] = ["album", "ep", "mixtape", "compilation"];
+const releaseTypeOrder: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
 
 export interface ArtistProjectGroup {
   releaseType: ReleaseType;

@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { createAlbum } from "../../api/albums";
 import type { AlbumCreate, ReleaseType } from "../../api/types";
 
-const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation"];
+const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
 export function CreateAlbumPage({ onCancel, onCreated }: { onCancel: () => void; onCreated: (id: number) => void }) {
   const [title, setTitle] = useState(""); const [artists, setArtists] = useState([""]); const [year, setYear] = useState(""); const [releaseType, setReleaseType] = useState<ReleaseType>("album");
   const [tracks, setTracks] = useState<string[]>([""]); const [bulk, setBulk] = useState(""); const [error, setError] = useState<string | null>(null); const [saving, setSaving] = useState(false);

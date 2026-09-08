@@ -172,6 +172,14 @@ def test_album_artists_and_track_featured_credits_are_structured() -> None:
     assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
 
 
+def test_album_release_types_include_live_and_reissue() -> None:
+    with SessionLocal() as session:
+        live = create_album(AlbumCreate.model_validate({**album_payload(), "title": "Live at the Sin-é", "release_type": "live"}), session)
+        reissue = create_album(AlbumCreate.model_validate({**album_payload(), "title": "Grace (Legacy Edition)", "release_type": "reissue"}), session)
+    assert live.release_type.value == "live"
+    assert reissue.release_type.value == "reissue"
+
+
 def test_artist_projects_include_the_current_effective_rating() -> None:
     album = create_test_album()
     with SessionLocal() as session:
