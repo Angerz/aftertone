@@ -53,6 +53,7 @@ def create_rating_revision(session: Session, album: Album, payload: RatingRevisi
             TrackRatingRevision(
                 track_id=track.id,
                 track_title=track.title,
+                disc_number=track.disc_number,
                 track_position=track.position,
                 score=item.score,
                 notes=item.notes,

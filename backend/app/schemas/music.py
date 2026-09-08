@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.music import ReleaseType
 
@@ -25,6 +25,7 @@ class PaginatedResponse(APIModel, Generic[T]):
 
 
 class TrackCreate(APIModel):
+    disc_number: int = Field(default=1, ge=1, le=99)
     position: int = Field(ge=1)
     title: str = Field(min_length=1, max_length=300)
 
@@ -98,6 +99,7 @@ class AlbumCreate(APIModel):
     artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
     release_type: ReleaseType = ReleaseType.ALBUM
+    disc_count: int = Field(default=1, ge=1, le=99)
     tracks: list[TrackCreate] = Field(min_length=1)
 
     @field_validator("title")
@@ -108,17 +110,19 @@ class AlbumCreate(APIModel):
             raise ValueError("must not be empty")
         return value
 
-    @field_validator("tracks")
-    @classmethod
-    def require_unique_positions(cls, tracks: list[TrackCreate]) -> list[TrackCreate]:
-        positions = [track.position for track in tracks]
+    @model_validator(mode="after")
+    def validate_disc_tracks(self) -> "AlbumCreate":
+        positions = [(track.disc_number, track.position) for track in self.tracks]
         if len(positions) != len(set(positions)):
-            raise ValueError("track positions must be unique within an album")
-        return tracks
+            raise ValueError("track positions must be unique within each disc")
+        if any(track.disc_number > self.disc_count for track in self.tracks):
+            raise ValueError("track disc number must not exceed album disc count")
+        return self
 
 
 class TrackUpdate(APIModel):
     id: int | None = Field(default=None, ge=1)
+    disc_number: int = Field(default=1, ge=1, le=99)
     title: str = Field(min_length=1, max_length=300)
 
     @field_validator("title")
@@ -135,6 +139,7 @@ class AlbumUpdate(APIModel):
     artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
     release_type: ReleaseType
+    disc_count: int = Field(default=1, ge=1, le=99)
     tracks: list[TrackUpdate] | None = Field(default=None, min_length=1)
 
     @field_validator("title")
@@ -144,6 +149,12 @@ class AlbumUpdate(APIModel):
         if not value:
             raise ValueError("must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def validate_disc_tracks(self) -> "AlbumUpdate":
+        if self.tracks is not None and any(track.disc_number > self.disc_count for track in self.tracks):
+            raise ValueError("track disc number must not exceed album disc count")
+        return self
 
 
 class CoverFromUrl(APIModel):
@@ -160,6 +171,7 @@ class CoverFromUrl(APIModel):
 
 class TrackResponse(APIModel):
     id: int
+    disc_number: int
     position: int
     title: str
     primary_artists: list[ArtistResponse] = Field(default_factory=list)
@@ -188,6 +200,7 @@ class AlbumResponse(APIModel):
     artists: list[ArtistResponse]
     year: int | None
     release_type: ReleaseType
+    disc_count: int
     created_at: datetime
     tracks: list[TrackResponse]
     latest_revision: LatestRevisionResponse | None = None
@@ -286,6 +299,7 @@ class RatingRevisionCreate(APIModel):
 class TrackRatingRevisionResponse(APIModel):
     track_id: int
     title: str
+    disc_number: int
     position: int
     score: Decimal | None
     include_in_pre_rating: bool

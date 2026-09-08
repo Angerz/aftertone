@@ -1,6 +1,7 @@
 import type { TrackRatingRevision } from "../../api/types";
 
 export interface MomentumPoint {
+  discNumber: number;
   position: number;
   title: string;
   score: number | null;
@@ -15,7 +16,7 @@ export interface AlbumMomentumData {
 }
 
 export function buildAlbumMomentumData(trackRatings: TrackRatingRevision[], preRating: number | null): AlbumMomentumData {
-  const points = [...trackRatings].sort((left, right) => left.position - right.position).map(({ position, title, score }) => ({ position, title, score }));
+  const points = [...trackRatings].sort((left, right) => left.disc_number - right.disc_number || left.position - right.position).map(({ disc_number, position, title, score }) => ({ discNumber: disc_number, position, title, score }));
   const rated = points.filter((point): point is MomentumPoint & { score: number } => point.score !== null);
   const segments: MomentumPoint[][] = [];
   let segment: MomentumPoint[] = [];

@@ -32,7 +32,7 @@ def reconcile_legacy_rating(session: Session, legacy: LegacyRating, payload: Leg
     if legacy.reconciliation_status != "pending": raise ReconciliationError("legacy rating has already been reconciled")
     album = session.get(Album, legacy.album_id)
     if album is None: raise ReconciliationError("legacy album does not exist")
-    tracks = list(session.scalars(select(Track).where(Track.album_id == album.id).order_by(Track.position)))
+    tracks = list(session.scalars(select(Track).where(Track.album_id == album.id).order_by(Track.disc_number, Track.position)))
     temporary_track_ids: dict[int, int] = {}
     if not tracks and payload.track_titles:
         titles = [title.strip() for title in payload.track_titles if title.strip()]
@@ -46,6 +46,6 @@ def reconcile_legacy_rating(session: Session, legacy: LegacyRating, payload: Leg
     revision = RatingRevision(album_id=album.id, coherence=legacy.coherence, emotion=legacy.emotion, coherence_notes=None, emotion_notes=None, album_notes=None, pre_rating=result.pre_rating, bad_experience=result.bad_experience, final_rating=result.final_rating)
     for track in tracks:
         score = mapped.get(track.id)
-        revision.track_ratings.append(TrackRatingRevision(track_id=track.id, track_title=track.title, track_position=track.position, score=score, include_in_pre_rating=score is not None, notes=None))
+        revision.track_ratings.append(TrackRatingRevision(track_id=track.id, track_title=track.title, disc_number=track.disc_number, track_position=track.position, score=score, include_in_pre_rating=score is not None, notes=None))
     session.add(revision); session.flush(); legacy.reconciliation_status = "reconciled"; legacy.reconciled_revision_id = revision.id
     return revision

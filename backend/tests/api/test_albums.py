@@ -86,6 +86,7 @@ def public_dns(monkeypatch) -> None:
 def test_create_get_and_list_albums_with_ordered_tracks() -> None:
     created = create_test_album()
     assert [track.position for track in created.tracks] == [1, 2]
+    assert created.disc_count == 1 and [track.disc_number for track in created.tracks] == [1, 1]
     assert created.year == 1994
     with SessionLocal() as session:
         found = get_album(created.id, session)
@@ -170,6 +171,45 @@ def test_album_artists_and_track_featured_credits_are_structured() -> None:
     assert [album.title for album in detail.albums] == ["Grace"]
     assert detail.albums[0].rating is None
     assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
+
+
+def test_multi_disc_tracks_are_validated_and_ordered_by_disc_then_position() -> None:
+    payload = {**album_payload("Double album"), "disc_count": 2, "tracks": [
+        {"disc_number": 2, "position": 1, "title": "Disc two opener"},
+        {"disc_number": 1, "position": 2, "title": "Disc one closer"},
+        {"disc_number": 1, "position": 1, "title": "Disc one opener"},
+        {"disc_number": 2, "position": 2, "title": "Disc two closer"},
+    ]}
+    with SessionLocal() as session:
+        created = create_album(AlbumCreate.model_validate(payload), session)
+        found = get_album(created.id, session)
+    assert found.disc_count == 2
+    assert [(track.disc_number, track.position, track.title) for track in found.tracks] == [(1, 1, "Disc one opener"), (1, 2, "Disc one closer"), (2, 1, "Disc two opener"), (2, 2, "Disc two closer")]
+    with pytest.raises(ValidationError):
+        AlbumCreate.model_validate({**payload, "tracks": [{"disc_number": 1, "position": 1, "title": "One"}, {"disc_number": 1, "position": 1, "title": "Duplicate"}]})
+    with pytest.raises(ValidationError):
+        AlbumCreate.model_validate({**payload, "tracks": [{"disc_number": 3, "position": 1, "title": "Outside"}]})
+
+
+def test_multi_disc_updates_preserve_tracks_and_reject_populated_disc_count_reduction() -> None:
+    payload = {**album_payload("Multi-disc edits"), "disc_count": 2, "tracks": [{"disc_number": 1, "position": 1, "title": "Disc one"}, {"disc_number": 2, "position": 1, "title": "Disc two"}]}
+    with SessionLocal() as session:
+        created = create_album(AlbumCreate.model_validate(payload), session)
+        increased = update_album(created.id, AlbumUpdate(title=created.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", disc_count=3), session)
+        assert [(track.disc_number, track.position) for track in increased.tracks] == [(1, 1), (2, 1)]
+        with pytest.raises(HTTPException, match="Cannot reduce disc count"):
+            update_album(created.id, AlbumUpdate(title=created.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", disc_count=1), session)
+
+
+def test_multi_disc_revision_snapshots_keep_their_disc_structure() -> None:
+    payload = {**album_payload("Snapshot discs"), "disc_count": 2, "tracks": [{"disc_number": 1, "position": 1, "title": "Disc one"}, {"disc_number": 2, "position": 1, "title": "Disc two"}]}
+    with SessionLocal() as session:
+        album = create_album(AlbumCreate.model_validate(payload), session)
+        revision = create_revision(album.id, RatingRevisionCreate.model_validate({"coherence": 7, "emotion": 8, "tracks": [{"track_id": track.id, "score": 8, "include_in_pre_rating": True, "notes": None} for track in album.tracks]}), session)
+        updated = update_album(album.id, AlbumUpdate(title=album.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", disc_count=2, tracks=[TrackUpdate(id=album.tracks[1].id, disc_number=1, title="Moved to disc one"), TrackUpdate(id=album.tracks[0].id, disc_number=2, title="Moved to disc two")]), session)
+        stored = get_revision(album.id, revision.id, session)
+    assert [(track.disc_number, track.position) for track in updated.tracks] == [(1, 1), (2, 1)]
+    assert [(track.disc_number, track.position, track.title) for track in stored.tracks] == [(1, 1, "Disc one"), (2, 1, "Disc two")]
 
 
 def test_album_release_types_include_live_and_reissue() -> None:

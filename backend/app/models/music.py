@@ -38,6 +38,7 @@ class Artist(Base):
 
 class Album(Base):
     __tablename__ = "albums"
+    __table_args__ = (CheckConstraint("disc_count >= 1", name="ck_album_disc_count_positive"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(300))
@@ -45,6 +46,7 @@ class Album(Base):
         Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]), default=ReleaseType.ALBUM
     )
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disc_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     cover_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
     needs_revisit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     revisit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -59,10 +61,15 @@ class Album(Base):
 
 class Track(Base):
     __tablename__ = "tracks"
-    __table_args__ = (UniqueConstraint("album_id", "position", name="uq_track_album_position"),)
+    __table_args__ = (
+        UniqueConstraint("album_id", "disc_number", "position", name="uq_track_album_disc_position"),
+        CheckConstraint("disc_number >= 1", name="ck_track_disc_number_positive"),
+        CheckConstraint("position >= 1", name="ck_track_position_positive"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     album_id: Mapped[int] = mapped_column(ForeignKey("albums.id", ondelete="CASCADE"))
+    disc_number: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     position: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(300))
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -134,6 +141,7 @@ class TrackRatingRevision(Base):
     rating_revision_id: Mapped[int] = mapped_column(ForeignKey("rating_revisions.id", ondelete="CASCADE"))
     track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="RESTRICT"))
     track_title: Mapped[str] = mapped_column(String(300))
+    disc_number: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     track_position: Mapped[int] = mapped_column(Integer)
     score: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

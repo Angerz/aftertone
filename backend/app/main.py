@@ -78,11 +78,11 @@ def album_response(album: Album, latest_revision: RatingRevision | None = None, 
         explicit_primary = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in track_credits if credit.role == TrackArtistRole.PRIMARY]
         primary = explicit_primary or artists
         featured = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in track_credits if credit.role == TrackArtistRole.FEATURED]
-        return TrackResponse(id=track.id, position=track.position, title=track.title, primary_artists=primary, featured_artists=featured, uses_album_artists=not explicit_primary)
+        return TrackResponse(id=track.id, disc_number=track.disc_number, position=track.position, title=track.title, primary_artists=primary, featured_artists=featured, uses_album_artists=not explicit_primary)
     return AlbumResponse(
         id=album.id, title=album.title, artists=artists, year=album.release_year,
-        release_type=album.release_type, created_at=album.created_at,
-        tracks=[track_response(track) for track in album.tracks],
+        release_type=album.release_type, disc_count=album.disc_count, created_at=album.created_at,
+        tracks=[track_response(track) for track in sorted(album.tracks, key=lambda track: (track.disc_number, track.position))],
         latest_revision=LatestRevisionResponse(
             id=latest_revision.id, created_at=latest_revision.created_at,
             pre_rating=latest_revision.pre_rating, final_rating=latest_revision.final_rating,
@@ -115,7 +115,7 @@ def revision_response(revision: RatingRevision) -> RatingRevisionResponse:
         pre_rating=revision.pre_rating, bad_experience=revision.bad_experience, final_rating=revision.final_rating,
         tracks=[
             TrackRatingRevisionResponse(
-                track_id=track.track_id, title=track.track_title, position=track.track_position,
+                track_id=track.track_id, title=track.track_title, disc_number=track.disc_number, position=track.track_position,
                 score=track.score, include_in_pre_rating=track.include_in_pre_rating, notes=track.notes,
             )
             for track in revision.track_ratings
@@ -131,8 +131,8 @@ def health() -> dict[str, str]:
 @app.post("/api/albums", response_model=AlbumResponse, status_code=status.HTTP_201_CREATED, tags=["albums"])
 def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) -> AlbumResponse:
     album = Album(
-        title=payload.title, release_year=payload.year, release_type=payload.release_type,
-        tracks=[Track(position=track.position, title=track.title) for track in payload.tracks],
+        title=payload.title, release_year=payload.year, release_type=payload.release_type, disc_count=payload.disc_count,
+        tracks=[Track(disc_number=track.disc_number, position=track.position, title=track.title) for track in payload.tracks],
     )
     try:
         session.add(album)
@@ -143,7 +143,7 @@ def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) 
     except Exception:
         session.rollback()
         raise
-    album.tracks.sort(key=lambda track: track.position)
+    album.tracks.sort(key=lambda track: (track.disc_number, track.position))
     return album_response(album)
 
 
@@ -208,7 +208,7 @@ def list_albums(
         .limit(page_size)
     ).all()
     for album, _, _ in rows:
-        album.tracks.sort(key=lambda track: track.position)
+        album.tracks.sort(key=lambda track: (track.disc_number, track.position))
     return PaginatedResponse(
         items=[album_response(album, latest_revision, latest_legacy) for album, latest_revision, latest_legacy in rows],
         page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
@@ -233,7 +233,7 @@ def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumRe
     ).where(Album.id == album_id))
     if album is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
-    album.tracks.sort(key=lambda track: track.position)
+    album.tracks.sort(key=lambda track: (track.disc_number, track.position))
     latest_legacy = session.scalar(select(LegacyRating).where(LegacyRating.album_id == album.id).order_by(LegacyRating.imported_at.desc(), LegacyRating.id.desc()))
     return album_response(album, latest_legacy=latest_legacy)
 
@@ -246,8 +246,11 @@ def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends
     album.release_type = payload.release_type
     try:
         set_album_artists(session, album, artist_ids_from_inputs(session, payload.artists))
+        if payload.disc_count < album.disc_count and payload.tracks is None and any(track.disc_number > payload.disc_count for track in album.tracks):
+            raise HTTPException(status_code=422, detail="Cannot reduce disc count while later discs contain tracks. Move or delete those tracks first.")
         if payload.tracks is not None:
-            update_album_tracks(session, album, payload.tracks)
+            update_album_tracks(session, album, payload.tracks, payload.disc_count)
+        album.disc_count = payload.disc_count
         session.commit()
         session.refresh(album)
     except Exception:
@@ -256,7 +259,7 @@ def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends
     return album_response(album)
 
 
-def update_album_tracks(session: Session, album: Album, tracks: list[TrackUpdate]) -> None:
+def update_album_tracks(session: Session, album: Album, tracks: list[TrackUpdate], disc_count: int) -> None:
     current = {track.id: track for track in album.tracks}
     incoming_ids = [track.id for track in tracks if track.id is not None]
     if len(incoming_ids) != len(set(incoming_ids)) or any(track_id not in current for track_id in incoming_ids):
@@ -266,11 +269,19 @@ def update_album_tracks(session: Session, album: Album, tracks: list[TrackUpdate
     if removed and session.scalar(select(TrackRatingRevision.id).where(TrackRatingRevision.track_id.in_(removed)).limit(1)) is not None:
         raise HTTPException(status_code=422, detail="Tracks used by native rating revisions cannot be deleted.")
 
+    if any(track.disc_number > disc_count for track in tracks):
+        raise HTTPException(status_code=422, detail="A track disc number exceeds the album disc count.")
+
+    offset = max((track.position for track in current.values()), default=0) + len(tracks) + 1
     for track in current.values():
-        track.position += 10_000
+        track.position += offset
     session.flush()
-    for position, item in enumerate(tracks, start=1):
-        track = current[item.id] if item.id is not None else Track(album=album, position=position, title=item.title)
+    positions_by_disc: dict[int, int] = {}
+    for item in tracks:
+        position = positions_by_disc.get(item.disc_number, 0) + 1
+        positions_by_disc[item.disc_number] = position
+        track = current[item.id] if item.id is not None else Track(album=album, disc_number=item.disc_number, position=position, title=item.title)
+        track.disc_number = item.disc_number
         track.position = position
         track.title = item.title
         if item.id is None:
@@ -323,7 +334,7 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
         featured_appearances=[TrackAppearanceResponse(
             track_id=credit.track.id, track_title=credit.track.title, album_id=credit.track.album.id,
             album_title=credit.track.album.title, role=credit.role.value,
-        ) for credit in sorted(artist.track_credits, key=lambda credit: (credit.track.album_id, credit.track.position)) if credit.role == TrackArtistRole.FEATURED],
+        ) for credit in sorted(artist.track_credits, key=lambda credit: (credit.track.album_id, credit.track.disc_number, credit.track.position)) if credit.role == TrackArtistRole.FEATURED],
     )
 
 
@@ -441,7 +452,7 @@ def album_with_tracks(album_id: int, session: Session) -> Album:
     ).where(Album.id == album_id))
     if album is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="album not found")
-    album.tracks.sort(key=lambda track: track.position)
+    album.tracks.sort(key=lambda track: (track.disc_number, track.position))
     return album
 
 
@@ -513,7 +524,7 @@ def create_revision(album_id: int, payload: RatingRevisionCreate,
     except Exception:
         session.rollback()
         raise
-    revision.track_ratings.sort(key=lambda track: track.track_position)
+    revision.track_ratings.sort(key=lambda track: (track.disc_number, track.track_position))
     return revision_response(revision)
 
 
@@ -543,5 +554,5 @@ def get_revision(album_id: int, revision_id: int, session: Session = Depends(get
     )
     if revision is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="revision not found")
-    revision.track_ratings.sort(key=lambda track: track.track_position)
+    revision.track_ratings.sort(key=lambda track: (track.disc_number, track.track_position))
     return revision_response(revision)
