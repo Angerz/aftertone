@@ -50,10 +50,19 @@ class ArtistCreate(APIModel):
         return value
 
 
+class ArtistUpdate(APIModel):
+    is_active: bool
+
+
 class ArtistResponse(APIModel):
     id: int
     name: str
+    normalized_name: str | None = None
+    is_active: bool = True
     album_count: int = 0
+    primary_track_count: int = 0
+    featured_track_count: int = 0
+    is_unused: bool = False
 
 
 class ArtistAlbumResponse(APIModel):

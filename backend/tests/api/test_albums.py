@@ -24,10 +24,10 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
+from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_artist, update_track_artists, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.models.music import Album, LegacyRating, RatingRevision, Track
-from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
+from app.models.music import Album, Artist, LegacyRating, RatingRevision, Track
+from app.schemas.music import AlbumCreate, ArtistCreate, ArtistUpdate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
 
@@ -290,6 +290,78 @@ def test_artist_pagination_search_and_ordering() -> None:
     assert first.total == 3 and first.total_pages == 2
     assert [item.name for item in searched.items] == ["Beta"]
     assert empty.items == [] and empty.total == 3
+
+
+def test_new_and_existing_artists_default_to_active() -> None:
+    with SessionLocal() as session:
+        existing = Artist(name="Existing", normalized_name="existing")
+        session.add(existing)
+        session.flush()
+        existing_id = existing.id
+        created = create_artist(ArtistCreate(name="Created"), session)
+        existing_active = session.get(Artist, existing_id).is_active
+    assert existing_active is True
+    assert created.is_active is True
+
+
+def test_artist_creation_reuses_active_normalized_names_and_rejects_inactive_duplicates() -> None:
+    with SessionLocal() as session:
+        created = create_artist(ArtistCreate(name="Kendrick Lamar"), session)
+        reused = create_artist(ArtistCreate(name="  kendrick   lamar  "), session)
+        assert reused.id == created.id
+        assert reused.name == "Kendrick Lamar"
+        update_artist(created.id, ArtistUpdate(is_active=False), session)
+        with pytest.raises(HTTPException) as inactive_duplicate:
+            create_artist(ArtistCreate(name="KENDRICK LAMAR"), session)
+        assert session.scalar(select(func.count(Artist.id))) == 1
+    assert inactive_duplicate.value.status_code == 409
+    assert inactive_duplicate.value.detail == "An inactive artist with this name already exists."
+
+
+def test_unused_artist_can_be_deleted_but_referenced_artists_cannot() -> None:
+    with SessionLocal() as session:
+        unused = create_artist(ArtistCreate(name="Unused"), session)
+        assert delete_artist(unused.id, session) == {"deleted": True}
+        assert session.get(Artist, unused.id) is None
+        album = create_album(AlbumCreate.model_validate(album_payload("Referenced")), session)
+        with pytest.raises(HTTPException) as blocked:
+            delete_artist(album.artists[0].id, session)
+    assert blocked.value.status_code == 409
+    assert blocked.value.detail == "Artist cannot be deleted because it is still referenced."
+
+
+def test_artists_with_primary_or_featured_track_credits_cannot_be_deleted() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        primary = create_artist(ArtistCreate(name="Primary"), session)
+        featured = create_artist(ArtistCreate(name="Featured"), session)
+        update_track_artists(album.tracks[0].id, TrackCreditsUpdate(primary_artist_ids=[primary.id], featured_artist_ids=[]), session)
+        update_track_artists(album.tracks[1].id, TrackCreditsUpdate(primary_artist_ids=[], featured_artist_ids=[featured.id]), session)
+        with pytest.raises(HTTPException) as primary_blocked:
+            delete_artist(primary.id, session)
+        with pytest.raises(HTTPException) as featured_blocked:
+            delete_artist(featured.id, session)
+    assert primary_blocked.value.status_code == 409
+    assert featured_blocked.value.status_code == 409
+
+
+def test_artist_active_state_preserves_existing_relationships_and_unused_filter() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        used = album.artists[0]
+        inactive = create_artist(ArtistCreate(name="Inactive unused"), session)
+        active = create_artist(ArtistCreate(name="Active unused"), session)
+        deactivated = update_artist(used.id, ArtistUpdate(is_active=False), session)
+        assert deactivated.is_active is False
+        assert get_album(album.id, session).artists[0].is_active is False
+        assert update_artist(used.id, ArtistUpdate(is_active=True), session).is_active is True
+        update_artist(inactive.id, ArtistUpdate(is_active=False), session)
+        inactive_rows = list_artists(active=False, session=session)
+        unused_rows = list_artists(unused=True, session=session)
+        active_rows = list_artists(active=True, session=session)
+    assert [artist.name for artist in inactive_rows.items] == ["Inactive unused"]
+    assert {artist.name for artist in unused_rows.items} == {"Active unused", "Inactive unused"}
+    assert {artist.name for artist in active_rows.items} == {"Active unused", "Jeff Buckley"}
 
 
 def test_create_and_read_complete_calculated_revision() -> None:

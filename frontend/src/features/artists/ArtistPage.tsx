@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { getArtist, listArtists } from "../../api/artists";
+import { deleteArtist, getArtist, listArtists, updateArtist } from "../../api/artists";
 import type { Artist, ArtistAlbum, ArtistDetail, PaginatedResponse } from "../../api/types";
 import { AlbumCover } from "../albums/AlbumCover";
 import { formatLibraryRating } from "../albums/library";
 import { getRatingTier } from "../albums/ratingTier";
 import { formatArtistNames } from "./artistDisplay";
 import { groupArtistProjects, summarizeArtistProjects } from "./artistProjects";
+import { artistFilterParams, canDeleteArtist, type ArtistFilter } from "./artistMaintenance";
 
 function ArtistPagination({ result, onPage }: { result: PaginatedResponse<Artist>; onPage: (page: number) => void }) {
   if (result.total_pages <= 1) return null;
@@ -13,9 +14,12 @@ function ArtistPagination({ result, onPage }: { result: PaginatedResponse<Artist
 }
 
 export function ArtistsPage({ onBack, onOpen }: { onBack: () => void; onOpen: (id: number) => void }) {
-  const [result, setResult] = useState<PaginatedResponse<Artist> | null>(null); const [search, setSearch] = useState(""); const [page, setPage] = useState(1); const [error, setError] = useState<string | null>(null);
-  useEffect(() => { let active = true; listArtists({ page, search }).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }); return () => { active = false; }; }, [page, search]);
-  return <main className="page narrow"><button className="back" onClick={onBack}>← Library</button><p className="eyebrow">Catalogue</p><h1>Artists</h1><label>Search artists<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label>{error && <p className="notice error">{error}</p>}<ol className="album-list">{result?.items.map((artist) => <li key={artist.id}><button className="album-link" onClick={() => onOpen(artist.id)}><strong>{artist.name}</strong><span>{artist.album_count ?? 0} album{artist.album_count === 1 ? "" : "s"}</span></button></li>)}</ol>{result && <ArtistPagination result={result} onPage={setPage} />}</main>;
+  const [result, setResult] = useState<PaginatedResponse<Artist> | null>(null); const [search, setSearch] = useState(""); const [page, setPage] = useState(1); const [filter, setFilter] = useState<ArtistFilter>("all"); const [error, setError] = useState<string | null>(null); const [confirmTarget, setConfirmTarget] = useState<Artist | null>(null); const [busy, setBusy] = useState(false); const [reload, setReload] = useState(0);
+  useEffect(() => { let active = true; listArtists({ page, search, ...artistFilterParams(filter) }).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }); return () => { active = false; }; }, [page, search, filter, reload]);
+  const chooseFilter = (next: ArtistFilter) => { setFilter(next); setPage(1); };
+  const changeActive = async (artist: Artist, isActive: boolean) => { setBusy(true); setError(null); try { await updateArtist(artist.id, isActive); setReload((value) => value + 1); } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); } };
+  const confirmDelete = async () => { if (!confirmTarget) return; setBusy(true); setError(null); try { await deleteArtist(confirmTarget.id); setConfirmTarget(null); setReload((value) => value + 1); } catch (cause) { setError((cause as Error).message); setConfirmTarget(null); } finally { setBusy(false); } };
+  return <main className="page narrow"><button className="back" onClick={onBack}>← Library</button><p className="eyebrow">Catalogue</p><h1>Artists</h1><label>Search artists<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label><div className="artist-filters" aria-label="Artist filters">{(["all", "active", "inactive", "unused"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => chooseFilter(item)}>{item[0].toUpperCase()}{item.slice(1)}</button>)}</div>{error && <p className="notice error" role="alert">{error}</p>}<ol className="album-list artist-list">{result?.items.map((artist) => <li key={artist.id}><div className="artist-list-row"><button className="album-link" onClick={() => onOpen(artist.id)}><strong>{artist.name}{artist.is_active === false && <small className="artist-inactive">Inactive</small>}</strong><span>{artist.album_count ?? 0} album{artist.album_count === 1 ? "" : "s"}</span></button><div className="artist-maintenance-actions">{artist.is_active === false ? <button className="text-button" disabled={busy} onClick={() => changeActive(artist, true)}>Reactivate</button> : canDeleteArtist(artist) && <button className="text-button" disabled={busy} onClick={() => changeActive(artist, false)}>Deactivate</button>}{canDeleteArtist(artist) && <button className="text-button danger-button" disabled={busy} onClick={() => setConfirmTarget(artist)}>Delete</button>}</div></div></li>)}</ol>{result && <ArtistPagination result={result} onPage={setPage} />}{confirmTarget && <div className="confirmation-backdrop" role="presentation"><section className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-artist-title"><h2 id="delete-artist-title">Delete “{confirmTarget.name}”?</h2><p>This artist has no projects or track credits. This cannot be undone.</p><div><button className="text-button" disabled={busy} onClick={() => setConfirmTarget(null)}>Cancel</button><button className="danger-button" disabled={busy} onClick={confirmDelete}>{busy ? "Deleting…" : "Delete artist"}</button></div></section></div>}</main>;
 }
 
 function ProjectCard({ album, onOpen }: { album: ArtistAlbum; onOpen: (id: number) => void }) {

@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
@@ -24,6 +25,7 @@ from app.schemas.music import (
     CoverFromUrl,
     AlbumResponse,
     ArtistCreate,
+    ArtistUpdate,
     ArtistAlbumResponse,
     ArtistDetailResponse,
     ArtistResponse,
@@ -73,12 +75,12 @@ def get_session() -> Generator[Session, None, None]:
 
 def album_response(album: Album, latest_revision: RatingRevision | None = None, latest_legacy: LegacyRating | None = None) -> AlbumResponse:
     credits = sorted(album.artist_credits, key=lambda credit: credit.position)
-    artists = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in credits]
+    artists = [ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in credits]
     def track_response(track: Track) -> TrackResponse:
         track_credits = sorted(track.artist_credits, key=lambda credit: (credit.role.value, credit.position))
-        explicit_primary = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in track_credits if credit.role == TrackArtistRole.PRIMARY]
+        explicit_primary = [ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in track_credits if credit.role == TrackArtistRole.PRIMARY]
         primary = explicit_primary or artists
-        featured = [ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in track_credits if credit.role == TrackArtistRole.FEATURED]
+        featured = [ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in track_credits if credit.role == TrackArtistRole.FEATURED]
         return TrackResponse(id=track.id, disc_number=track.disc_number, position=track.position, title=track.title, primary_artists=primary, featured_artists=featured, uses_album_artists=not explicit_primary)
     return AlbumResponse(
         id=album.id, title=album.title, artists=artists, year=album.release_year,
@@ -318,26 +320,86 @@ def update_album_tracks(session: Session, album: Album, tracks: list[TrackUpdate
         session.delete(current[track_id])
 
 
+def artist_usage_counts():
+    album_count = select(func.count(AlbumArtist.id)).where(AlbumArtist.artist_id == Artist.id).correlate(Artist).scalar_subquery()
+    primary_track_count = select(func.count(TrackArtist.id)).where(
+        TrackArtist.artist_id == Artist.id, TrackArtist.role == TrackArtistRole.PRIMARY,
+    ).correlate(Artist).scalar_subquery()
+    featured_track_count = select(func.count(TrackArtist.id)).where(
+        TrackArtist.artist_id == Artist.id, TrackArtist.role == TrackArtistRole.FEATURED,
+    ).correlate(Artist).scalar_subquery()
+    return album_count, primary_track_count, featured_track_count
+
+
+def artist_response(artist: Artist, album_count: int = 0, primary_track_count: int = 0, featured_track_count: int = 0) -> ArtistResponse:
+    return ArtistResponse(
+        id=artist.id, name=artist.name, normalized_name=artist.normalized_name, is_active=artist.is_active,
+        album_count=album_count, primary_track_count=primary_track_count, featured_track_count=featured_track_count,
+        is_unused=not (album_count or primary_track_count or featured_track_count),
+    )
+
+
 @app.get("/api/artists", response_model=PaginatedResponse[ArtistResponse], tags=["artists"])
 def list_artists(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 50, search: str | None = None,
-    session: Session = Depends(get_session),
+    active: bool | None = None, unused: bool = False, session: Session = Depends(get_session),
 ) -> PaginatedResponse[ArtistResponse]:
+    album_count, primary_track_count, featured_track_count = artist_usage_counts()
     filters = [func.lower(Artist.name).like(f"%{search.strip().casefold()}%")] if search and search.strip() else []
+    if active is not None:
+        filters.append(Artist.is_active == active)
+    if unused:
+        filters.extend([album_count == 0, primary_track_count == 0, featured_track_count == 0])
     total = session.scalar(select(func.count(Artist.id)).where(*filters)) or 0
-    album_count = select(func.count(AlbumArtist.id)).where(AlbumArtist.artist_id == Artist.id).correlate(Artist).scalar_subquery()
-    rows = session.execute(select(Artist, album_count.label("album_count")).where(*filters).order_by(func.lower(Artist.name), Artist.id).offset((page - 1) * page_size).limit(page_size)).all()
+    rows = session.execute(
+        select(Artist, album_count, primary_track_count, featured_track_count)
+        .where(*filters).order_by(func.lower(Artist.name), Artist.id)
+        .offset((page - 1) * page_size).limit(page_size)
+    ).all()
     return PaginatedResponse(
-        items=[ArtistResponse(id=artist.id, name=artist.name, album_count=count) for artist, count in rows],
+        items=[artist_response(artist, album_count, primary_count, featured_count) for artist, album_count, primary_count, featured_count in rows],
         page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
     )
 
 
 @app.post("/api/artists", response_model=ArtistResponse, status_code=status.HTTP_201_CREATED, tags=["artists"])
 def create_artist(payload: ArtistCreate, session: Session = Depends(get_session)) -> ArtistResponse:
+    existing = session.scalar(select(Artist).where(Artist.normalized_name == normalize_artist_name(payload.name)))
+    if existing is not None and not existing.is_active:
+        raise HTTPException(status_code=409, detail="An inactive artist with this name already exists.")
     artist = get_or_create_artist(session, payload.name)
     session.commit()
-    return ArtistResponse(id=artist.id, name=artist.name, album_count=0)
+    return artist_response(artist)
+
+
+@app.patch("/api/artists/{artist_id}", response_model=ArtistResponse, tags=["artists"])
+def update_artist(artist_id: int, payload: ArtistUpdate, session: Session = Depends(get_session)) -> ArtistResponse:
+    artist = session.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    artist.is_active = payload.is_active
+    session.commit()
+    album_count, primary_track_count, featured_track_count = artist_usage_counts()
+    counts = session.execute(select(album_count, primary_track_count, featured_track_count).where(Artist.id == artist_id)).one()
+    return artist_response(artist, *counts)
+
+
+@app.delete("/api/artists/{artist_id}", tags=["artists"])
+def delete_artist(artist_id: int, session: Session = Depends(get_session)) -> dict[str, bool]:
+    artist = session.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    album_count, primary_track_count, featured_track_count = artist_usage_counts()
+    counts = session.execute(select(album_count, primary_track_count, featured_track_count).where(Artist.id == artist_id)).one()
+    if any(counts):
+        raise HTTPException(status_code=409, detail="Artist cannot be deleted because it is still referenced.")
+    try:
+        session.delete(artist)
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Artist cannot be deleted because it is still referenced.") from error
+    return {"deleted": True}
 
 
 @app.get("/api/artists/{artist_id}", response_model=ArtistDetailResponse, tags=["artists"])
@@ -352,11 +414,14 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
         raise HTTPException(status_code=404, detail="artist not found")
     albums = sorted((credit.album for credit in artist.album_credits), key=lambda album: album.id)
     return ArtistDetailResponse(
-        id=artist.id, name=artist.name, album_count=len(albums),
+        id=artist.id, name=artist.name, is_active=artist.is_active, album_count=len(albums),
+        primary_track_count=sum(credit.role == TrackArtistRole.PRIMARY for credit in artist.track_credits),
+        featured_track_count=sum(credit.role == TrackArtistRole.FEATURED for credit in artist.track_credits),
+        is_unused=not artist.album_credits and not artist.track_credits,
         albums=[ArtistAlbumResponse(
             id=album.id, title=album.title, year=album.release_year, release_type=album.release_type,
             cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
-            artists=[ArtistResponse(id=credit.artist.id, name=credit.artist.name) for credit in sorted(album.artist_credits, key=lambda credit: credit.position)],
+            artists=[ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in sorted(album.artist_credits, key=lambda credit: credit.position)],
             rating=effective_album_rating(album),
         ) for album in albums],
         featured_appearances=[TrackAppearanceResponse(

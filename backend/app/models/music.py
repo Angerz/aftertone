@@ -30,6 +30,7 @@ class Artist(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(300))
     normalized_name: Mapped[str] = mapped_column(String(300), unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     album_credits: Mapped[list[AlbumArtist]] = relationship(back_populates="artist")
