@@ -215,6 +215,11 @@ class AlbumFacetsResponse(APIModel):
     decades: dict[int, list[int]]
 
 
+class AlbumRatingSummaryResponse(APIModel):
+    average: Decimal | None
+    rated_count: int
+
+
 class RevisitUpdate(APIModel):
     reason: str | None = Field(default=None, max_length=5000)
 

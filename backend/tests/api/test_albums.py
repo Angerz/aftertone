@@ -24,9 +24,9 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import album_facets, app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
+from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_revision, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_track_artists, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.models.music import Album, LegacyRating, Track
+from app.models.music import Album, LegacyRating, RatingRevision, Track
 from app.schemas.music import AlbumCreate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
@@ -245,6 +245,38 @@ def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
     assert [item.title for item in artist_search.items] == ["First"]
     assert empty.items == [] and empty.page == 99
     assert facets.decades == {2010: [2019], 2020: [2020, 2024, 2029], 2030: [2030]}
+
+
+def test_album_rating_summary_aggregates_effective_ratings_across_all_filter_matches() -> None:
+    with SessionLocal() as session:
+        native = create_album(AlbumCreate.model_validate({**album_payload("Native"), "year": 2000}), session)
+        legacy = create_album(AlbumCreate.model_validate({**album_payload("Legacy"), "year": 2003}), session)
+        later = create_album(AlbumCreate.model_validate({**album_payload("Later"), "year": 2012}), session)
+        create_album(AlbumCreate.model_validate({**album_payload("Unrated"), "year": 2008}), session)
+        session.add_all([
+            RatingRevision(album_id=native.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("10.202")),
+            LegacyRating(album_id=native.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["1"], pre_formula="=(1)/1", computed_final_rating=Decimal("1")),
+            LegacyRating(album_id=legacy.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["9"], pre_formula="=(9)/1", computed_final_rating=Decimal("9.954")),
+            LegacyRating(album_id=later.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["8"], pre_formula="=(8)/1", computed_final_rating=Decimal("8.764")),
+        ])
+        session.commit()
+        all_years = album_rating_summary(session=session)
+        two_thousands = album_rating_summary(decade=2000, session=session)
+        legacy_year = album_rating_summary(year=2003, decade=2000, session=session)
+        no_ratings = album_rating_summary(year=2008, decade=2000, session=session)
+
+    assert float(all_years.average) == pytest.approx(9.64)
+    assert all_years.rated_count == 3
+    assert float(two_thousands.average) == pytest.approx(10.078)
+    assert two_thousands.rated_count == 2
+    assert float(legacy_year.average) == pytest.approx(9.954)
+    assert legacy_year.rated_count == 1
+    assert no_ratings.average is None
+    assert no_ratings.rated_count == 0
+
+    payload = two_thousands.model_dump(mode="json")
+    assert isinstance(payload["average"], float)
+    assert payload == {"average": 10.078, "rated_count": 2}
 
 
 def test_artist_pagination_search_and_ordering() -> None:

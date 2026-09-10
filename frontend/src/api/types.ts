@@ -33,3 +33,4 @@ export interface LegacyImportPreview { rows: LegacyImportRow[] }
 export interface LegacyImportCommit { imported: number; skipped: number; failed: number }
 export interface LegacyRatingDetail { id: number; album_id: number; extracted_scores: number[]; coherence: number; emotion: number; legacy_pre_rating: number | null; legacy_bad_experience: number | null; legacy_final_rating: number | null; reconciliation_status: string }
 export interface AlbumFacets { decades: Record<string, number[]> }
+export interface AlbumRatingSummary { average: number | null; rated_count: number }

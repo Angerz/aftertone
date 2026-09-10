@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
@@ -19,6 +19,7 @@ from app.services.legacy_reconciliation import ReconciliationError, preview_lega
 from app.schemas.music import (
     AlbumCreate,
     AlbumFacetsResponse,
+    AlbumRatingSummaryResponse,
     AlbumUpdate,
     CoverFromUrl,
     AlbumResponse,
@@ -163,6 +164,26 @@ def album_filters(year: int | None, decade: int | None, search: str | None):
     return filters
 
 
+def latest_rating_ids():
+    latest_revision_id = (
+        select(RatingRevision.id).where(RatingRevision.album_id == Album.id)
+        .order_by(RatingRevision.created_at.desc(), RatingRevision.id.desc()).limit(1).correlate(Album).scalar_subquery()
+    )
+    latest_legacy_id = (
+        select(LegacyRating.id).where(LegacyRating.album_id == Album.id)
+        .order_by(LegacyRating.imported_at.desc(), LegacyRating.id.desc()).limit(1).correlate(Album).scalar_subquery()
+    )
+    return latest_revision_id, latest_legacy_id
+
+
+def effective_rating_value():
+    """Match the rating precedence exposed by the Library response."""
+    return case(
+        (RatingRevision.id.is_not(None), RatingRevision.final_rating),
+        else_=func.coalesce(LegacyRating.computed_final_rating, LegacyRating.legacy_final_rating),
+    )
+
+
 @app.get("/api/albums", response_model=PaginatedResponse[AlbumResponse], tags=["albums"])
 def list_albums(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 25,
@@ -170,21 +191,10 @@ def list_albums(
     search: str | None = None, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating",
     session: Session = Depends(get_session),
 ) -> PaginatedResponse[AlbumResponse]:
-    latest_revision_id = (
-        select(RatingRevision.id)
-        .where(RatingRevision.album_id == Album.id)
-        .order_by(RatingRevision.created_at.desc(), RatingRevision.id.desc())
-        .limit(1)
-        .correlate(Album)
-        .scalar_subquery()
-    )
-    latest_legacy_id = (
-        select(LegacyRating.id).where(LegacyRating.album_id == Album.id)
-        .order_by(LegacyRating.imported_at.desc(), LegacyRating.id.desc()).limit(1).correlate(Album).scalar_subquery()
-    )
+    latest_revision_id, latest_legacy_id = latest_rating_ids()
     filters = album_filters(year, decade, search)
     total = session.scalar(select(func.count(Album.id)).where(*filters)) or 0
-    rating_value = func.coalesce(RatingRevision.final_rating, LegacyRating.computed_final_rating, LegacyRating.legacy_final_rating)
+    rating_value = effective_rating_value()
     recent_value = func.coalesce(RatingRevision.created_at, LegacyRating.imported_at)
     first_artist_name = select(Artist.name).join(AlbumArtist).where(AlbumArtist.album_id == Album.id).order_by(AlbumArtist.position).limit(1).scalar_subquery()
     ordering = {
@@ -213,6 +223,24 @@ def list_albums(
         items=[album_response(album, latest_revision, latest_legacy) for album, latest_revision, latest_legacy in rows],
         page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
     )
+
+
+@app.get("/api/albums/summary", response_model=AlbumRatingSummaryResponse, tags=["albums"])
+def album_rating_summary(
+    year: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+    decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+    session: Session = Depends(get_session),
+) -> AlbumRatingSummaryResponse:
+    latest_revision_id, latest_legacy_id = latest_rating_ids()
+    effective_rating = effective_rating_value()
+    average, rated_count = session.execute(
+        select(func.avg(effective_rating), func.count(effective_rating))
+        .select_from(Album)
+        .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
+        .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
+        .where(*album_filters(year, decade, None))
+    ).one()
+    return AlbumRatingSummaryResponse(average=average, rated_count=rated_count)
 
 
 @app.get("/api/albums/facets", response_model=AlbumFacetsResponse, tags=["albums"])
