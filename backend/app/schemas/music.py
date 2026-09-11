@@ -78,8 +78,13 @@ class ArtistAlbumResponse(APIModel):
 class TrackAppearanceResponse(APIModel):
     track_id: int
     track_title: str
+    track_position: int
     album_id: int
     album_title: str
+    album_year: int | None
+    album_release_type: ReleaseType
+    album_cover_url: str | None = None
+    score: Decimal | None = None
     role: str
 
 

@@ -408,7 +408,7 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
         selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
         selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.revisions),
         selectinload(Artist.album_credits).selectinload(AlbumArtist.album).selectinload(Album.legacy_ratings),
-        selectinload(Artist.track_credits).selectinload(TrackArtist.track).selectinload(Track.album),
+        selectinload(Artist.track_credits).selectinload(TrackArtist.track).selectinload(Track.album).selectinload(Album.revisions).selectinload(RatingRevision.track_ratings),
     ).where(Artist.id == artist_id))
     if artist is None:
         raise HTTPException(status_code=404, detail="artist not found")
@@ -425,9 +425,15 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
             rating=effective_album_rating(album),
         ) for album in albums],
         featured_appearances=[TrackAppearanceResponse(
-            track_id=credit.track.id, track_title=credit.track.title, album_id=credit.track.album.id,
-            album_title=credit.track.album.title, role=credit.role.value,
-        ) for credit in sorted(artist.track_credits, key=lambda credit: (credit.track.album_id, credit.track.disc_number, credit.track.position)) if credit.role == TrackArtistRole.FEATURED],
+            track_id=credit.track.id, track_title=credit.track.title, track_position=credit.track.position,
+            album_id=credit.track.album.id, album_title=credit.track.album.title,
+            album_year=credit.track.album.release_year, album_release_type=credit.track.album.release_type,
+            album_cover_url=f"/media/covers/{credit.track.album.cover_filename}" if credit.track.album.cover_filename else None,
+            score=next((item.score for item in max(credit.track.album.revisions, key=lambda revision: (revision.created_at, revision.id), default=None).track_ratings if item.track_id == credit.track.id), None) if credit.track.album.revisions else None,
+            role=credit.role.value,
+        ) for credit in sorted(artist.track_credits, key=lambda credit: (
+            credit.track.album.release_year is None, -(credit.track.album.release_year or 0), credit.track.album.title.casefold(), credit.track.disc_number, credit.track.position,
+        )) if credit.role == TrackArtistRole.FEATURED],
     )
 
 

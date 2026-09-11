@@ -3,7 +3,7 @@ export interface PaginatedResponse<T> { items: T[]; page: number; page_size: num
 export interface Artist { id: number; name: string; normalized_name?: string | null; is_active?: boolean; album_count?: number; primary_track_count?: number; featured_track_count?: number; is_unused?: boolean }
 export interface ArtistCreditInput { artist_id?: number; name?: string }
 export interface ArtistAlbum { id: number; title: string; year: number | null; release_type: ReleaseType; cover_url: string | null; artists: Artist[]; rating: number | null }
-export interface TrackAppearance { track_id: number; track_title: string; album_id: number; album_title: string; role: "featured" }
+export interface TrackAppearance { track_id: number; track_title: string; track_position: number; album_id: number; album_title: string; album_year: number | null; album_release_type: ReleaseType; album_cover_url: string | null; score: number | null; role: "featured" }
 export interface ArtistDetail extends Artist { albums: ArtistAlbum[]; featured_appearances: TrackAppearance[] }
 
 export interface Track { id: number; disc_number: number; position: number; title: string; primary_artists: Artist[]; featured_artists: Artist[]; uses_album_artists: boolean }

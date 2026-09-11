@@ -167,10 +167,28 @@ def test_album_artists_and_track_featured_credits_are_structured() -> None:
         assert [artist.name for artist in inherited.primary_artists] == ["Primary Artist", "Second Artist"]
         featured = update_track_artists(inherited.id, TrackCreditsUpdate(featured_artist_ids=[created.artists[1].id]), session)
         assert [artist.name for artist in featured.featured_artists] == ["Second Artist"]
+        stored_album = session.get(Album, created.id)
+        assert stored_album is not None
+        stored_album.cover_filename = "grace.webp"
+        session.commit()
+        create_revision(created.id, RatingRevisionCreate.model_validate(revision_payload(created)), session)
         detail = get_artist(created.artists[1].id, session)
     assert [album.title for album in detail.albums] == ["Grace"]
-    assert detail.albums[0].rating is None
+    assert detail.albums[0].rating is not None
     assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
+    appearance = detail.featured_appearances[0]
+    assert (appearance.album_year, appearance.album_release_type.value, appearance.album_cover_url, appearance.track_position, appearance.score) == (1994, "album", "/media/covers/grace.webp", 1, Decimal("10"))
+
+
+def test_featured_appearance_without_a_native_revision_has_no_track_score() -> None:
+    album = create_test_album()
+    with SessionLocal() as session:
+        guest = create_artist(ArtistCreate(name="Guest"), session)
+        update_track_artists(album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[guest.id]), session)
+        detail = get_artist(guest.id, session)
+    assert detail.albums == []
+    assert len(detail.featured_appearances) == 1
+    assert detail.featured_appearances[0].score is None
 
 
 def test_multi_disc_tracks_are_validated_and_ordered_by_disc_then_position() -> None:

@@ -10,8 +10,13 @@ describe("artist projects", () => {
   });
 
   it("does not include featured appearances in the artist average", () => {
-    const artist = { albums: [project({ rating: 8 })], featured_appearances: [{ track_id: 1, track_title: "Guest verse", album_id: 2, album_title: "Elsewhere", role: "featured" }] } as Pick<ArtistDetail, "albums" | "featured_appearances">;
+    const artist = { albums: [project({ rating: 8 })], featured_appearances: [{ track_id: 1, track_title: "Guest verse", track_position: 1, album_id: 2, album_title: "Elsewhere", album_year: 2024, album_release_type: "album", album_cover_url: null, score: 10, role: "featured" }] } as Pick<ArtistDetail, "albums" | "featured_appearances">;
     expect(summarizeArtistProjects(artist).average).toBe(8);
+  });
+
+  it("returns no average for an artist with featured tracks only", () => {
+    const artist = { albums: [], featured_appearances: [{ track_id: 1, track_title: "Guest verse", track_position: 1, album_id: 2, album_title: "Elsewhere", album_year: 2024, album_release_type: "album", album_cover_url: null, score: 9, role: "featured" }] } as Pick<ArtistDetail, "albums" | "featured_appearances">;
+    expect(summarizeArtistProjects(artist)).toEqual({ average: null, ratedProjects: 0 });
   });
 
   it("returns no average when every primary project is unrated", () => {
