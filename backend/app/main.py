@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
 from app.config import cover_dir, web_origins
-from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, Track, TrackArtist, TrackArtistRole, TrackRatingRevision
+from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, ReleaseType, Track, TrackArtist, TrackArtistRole, TrackRatingRevision
 from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
@@ -331,12 +331,33 @@ def artist_usage_counts():
     return album_count, primary_track_count, featured_track_count
 
 
-def artist_response(artist: Artist, album_count: int = 0, primary_track_count: int = 0, featured_track_count: int = 0) -> ArtistResponse:
+def artist_response(artist: Artist, album_count: int = 0, primary_track_count: int = 0, featured_track_count: int = 0, project_counts: dict[ReleaseType, int] | None = None, average_rating: Decimal | None = None, rated_project_count: int = 0) -> ArtistResponse:
     return ArtistResponse(
         id=artist.id, name=artist.name, normalized_name=artist.normalized_name, is_active=artist.is_active,
         album_count=album_count, primary_track_count=primary_track_count, featured_track_count=featured_track_count,
         is_unused=not (album_count or primary_track_count or featured_track_count),
+        project_counts=project_counts or {}, average_rating=average_rating, rated_project_count=rated_project_count,
     )
+
+
+def artist_project_summaries():
+    project_counts = {
+        release_type: select(func.count(AlbumArtist.id)).join(Album).where(
+            AlbumArtist.artist_id == Artist.id, Album.release_type == release_type,
+        ).correlate(Artist).scalar_subquery()
+        for release_type in ReleaseType
+    }
+    latest_revision_id, latest_legacy_id = latest_rating_ids()
+    native_rating = select(RatingRevision.final_rating).where(RatingRevision.id == latest_revision_id).scalar_subquery()
+    legacy_rating = select(func.coalesce(LegacyRating.computed_final_rating, LegacyRating.legacy_final_rating)).where(LegacyRating.id == latest_legacy_id).scalar_subquery()
+    effective_rating = case((latest_revision_id.is_not(None), native_rating), else_=legacy_rating)
+    average_rating = select(func.avg(effective_rating)).select_from(AlbumArtist).join(Album).where(
+        AlbumArtist.artist_id == Artist.id,
+    ).correlate(Artist).scalar_subquery()
+    rated_project_count = select(func.count(effective_rating)).select_from(AlbumArtist).join(Album).where(
+        AlbumArtist.artist_id == Artist.id,
+    ).correlate(Artist).scalar_subquery()
+    return project_counts, average_rating, rated_project_count
 
 
 @app.get("/api/artists", response_model=PaginatedResponse[ArtistResponse], tags=["artists"])
@@ -345,6 +366,7 @@ def list_artists(
     active: bool | None = None, unused: bool = False, session: Session = Depends(get_session),
 ) -> PaginatedResponse[ArtistResponse]:
     album_count, primary_track_count, featured_track_count = artist_usage_counts()
+    project_counts, average_rating, rated_project_count = artist_project_summaries()
     filters = [func.lower(Artist.name).like(f"%{search.strip().casefold()}%")] if search and search.strip() else []
     if active is not None:
         filters.append(Artist.is_active == active)
@@ -352,12 +374,15 @@ def list_artists(
         filters.extend([album_count == 0, primary_track_count == 0, featured_track_count == 0])
     total = session.scalar(select(func.count(Artist.id)).where(*filters)) or 0
     rows = session.execute(
-        select(Artist, album_count, primary_track_count, featured_track_count)
+        select(Artist, album_count, primary_track_count, featured_track_count, *project_counts.values(), average_rating, rated_project_count)
         .where(*filters).order_by(func.lower(Artist.name), Artist.id)
         .offset((page - 1) * page_size).limit(page_size)
     ).all()
     return PaginatedResponse(
-        items=[artist_response(artist, album_count, primary_count, featured_count) for artist, album_count, primary_count, featured_count in rows],
+        items=[artist_response(
+            artist, album_count, primary_count, featured_count,
+            dict(zip(project_counts, counts[:len(project_counts)])), counts[-2], counts[-1],
+        ) for artist, album_count, primary_count, featured_count, *counts in rows],
         page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
     )
 

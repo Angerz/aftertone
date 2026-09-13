@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ArtistAlbum, ArtistDetail } from "../../api/types";
-import { averageProjectRating, groupArtistProjects, ratedProjectCount, summarizeArtistProjects } from "./artistProjects";
+import { averageProjectRating, formatProjectCounts, groupArtistProjects, ratedProjectCount, summarizeArtistProjects } from "./artistProjects";
 
 const project = (overrides: Partial<ArtistAlbum>): ArtistAlbum => ({ id: 1, title: "Project", year: 2020, release_type: "album", cover_url: null, artists: [], rating: null, ...overrides });
 
@@ -33,5 +33,11 @@ describe("artist projects", () => {
   it("sorts projects by year descending, then title, with unknown years last", () => {
     const groups = groupArtistProjects([project({ title: "Zeta", year: 2020 }), project({ id: 2, title: "Alpha", year: 2020 }), project({ id: 3, title: "Unknown", year: null }), project({ id: 4, title: "Newest", year: 2024 })]);
     expect(groups[0].projects.map((item) => item.title)).toEqual(["Newest", "Alpha", "Zeta", "Unknown"]);
+  });
+
+  it("formats project counts in release-type order with correct singulars", () => {
+    expect(formatProjectCounts({ album: 4, ep: 1, mixtape: 1 })).toBe("4 albums · 1 EP · 1 mixtape");
+    expect(formatProjectCounts({ live: 1 })).toBe("1 live project");
+    expect(formatProjectCounts({})).toBe("No primary projects");
   });
 });

@@ -11,6 +11,11 @@ const releaseTypeLabels: Record<ReleaseType, string> = {
 
 const releaseTypeOrder: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
 
+const projectCountLabels: Record<ReleaseType, [string, string]> = {
+  album: ["album", "albums"], ep: ["EP", "EPs"], mixtape: ["mixtape", "mixtapes"],
+  compilation: ["compilation", "compilations"], live: ["live project", "live projects"], reissue: ["reissue", "reissues"],
+};
+
 export interface ArtistProjectGroup {
   releaseType: ReleaseType;
   label: string;
@@ -28,6 +33,14 @@ export function ratedProjectCount(projects: ArtistAlbum[]): number {
 
 export function summarizeArtistProjects(artist: Pick<ArtistDetail, "albums">): { average: number | null; ratedProjects: number } {
   return { average: averageProjectRating(artist.albums), ratedProjects: ratedProjectCount(artist.albums) };
+}
+
+export function formatProjectCounts(counts: Partial<Record<ReleaseType, number>>): string {
+  const items = releaseTypeOrder.flatMap((releaseType) => {
+    const count = counts[releaseType] ?? 0;
+    return count ? [`${count} ${projectCountLabels[releaseType][count === 1 ? 0 : 1]}`] : [];
+  });
+  return items.length ? items.join(" · ") : "No primary projects";
 }
 
 function compareProjects(left: ArtistAlbum, right: ArtistAlbum): number {

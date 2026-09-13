@@ -310,6 +310,28 @@ def test_artist_pagination_search_and_ordering() -> None:
     assert empty.items == [] and empty.total == 3
 
 
+def test_artist_list_includes_primary_project_breakdown_and_average_only() -> None:
+    with SessionLocal() as session:
+        albums = [
+            create_album(AlbumCreate.model_validate({**album_payload("Album one"), "artists": [{"name": "Denzel"}], "release_type": "album"}), session),
+            create_album(AlbumCreate.model_validate({**album_payload("Album two"), "artists": [{"name": "Denzel"}], "release_type": "album"}), session),
+            create_album(AlbumCreate.model_validate({**album_payload("EP"), "artists": [{"name": "Denzel"}], "release_type": "ep"}), session),
+            create_album(AlbumCreate.model_validate({**album_payload("Mixtape"), "artists": [{"name": "Denzel"}], "release_type": "mixtape"}), session),
+        ]
+        session.add_all([
+            RatingRevision(album_id=albums[0].id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("8")),
+            RatingRevision(album_id=albums[2].id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("6")),
+        ])
+        featured_album = create_album(AlbumCreate.model_validate({**album_payload("Elsewhere"), "artists": [{"name": "Other"}]}), session)
+        update_track_artists(featured_album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[albums[0].artists[0].id]), session)
+        session.commit()
+        denzel = list_artists(search="denzel", session=session).items[0]
+
+    assert denzel.project_counts == {"album": 2, "ep": 1, "mixtape": 1, "compilation": 0, "live": 0, "reissue": 0}
+    assert denzel.rated_project_count == 2
+    assert denzel.average_rating == Decimal("7")
+
+
 def test_new_and_existing_artists_default_to_active() -> None:
     with SessionLocal() as session:
         existing = Artist(name="Existing", normalized_name="existing")

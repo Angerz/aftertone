@@ -63,6 +63,9 @@ class ArtistResponse(APIModel):
     primary_track_count: int = 0
     featured_track_count: int = 0
     is_unused: bool = False
+    project_counts: dict[ReleaseType, int] = Field(default_factory=dict)
+    average_rating: Decimal | None = None
+    rated_project_count: int = 0
 
 
 class ArtistAlbumResponse(APIModel):
