@@ -43,6 +43,7 @@ class Album(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(300))
+    musicbrainz_release_id: Mapped[str | None] = mapped_column(String(36), unique=True, nullable=True)
     release_type: Mapped[ReleaseType] = mapped_column(
         Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]), default=ReleaseType.ALBUM
     )

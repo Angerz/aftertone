@@ -25,6 +25,7 @@ from app.schemas.music import (
     CoverFromUrl,
     AlbumResponse,
     ArtistCreate,
+    ArtistCreditInput,
     ArtistUpdate,
     ArtistAlbumResponse,
     ArtistDetailResponse,
@@ -39,6 +40,9 @@ from app.schemas.music import (
     LegacyReconciliationPreviewResponse,
     LegacyReconciliationResponse,
     LegacyRatingDetailResponse,
+    MusicBrainzImportRequest,
+    MusicBrainzReleasePreview,
+    MusicBrainzSearchResult,
     LatestRevisionResponse,
     PaginatedResponse,
     RatingRevisionCreate,
@@ -51,6 +55,7 @@ from app.schemas.music import (
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
 from app.services.covers import CoverError, download_cover_from_url, remove_cover_file, save_cover
 from app.services.artists import artist_ids_from_inputs, get_or_create_artist, normalize_artist_name, set_album_artists, set_track_artists
+from app.integrations.musicbrainz import MusicBrainzError, release_preview, search_releases
 from decimal import Decimal
 
 app = FastAPI(title="Aftertone API", version="0.1.0")
@@ -83,7 +88,7 @@ def album_response(album: Album, latest_revision: RatingRevision | None = None, 
         featured = [ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in track_credits if credit.role == TrackArtistRole.FEATURED]
         return TrackResponse(id=track.id, disc_number=track.disc_number, position=track.position, title=track.title, primary_artists=primary, featured_artists=featured, uses_album_artists=not explicit_primary)
     return AlbumResponse(
-        id=album.id, title=album.title, artists=artists, year=album.release_year,
+        id=album.id, title=album.title, musicbrainz_release_id=album.musicbrainz_release_id, artists=artists, year=album.release_year,
         release_type=album.release_type, disc_count=album.disc_count, created_at=album.created_at,
         tracks=[track_response(track) for track in sorted(album.tracks, key=lambda track: (track.disc_number, track.position))],
         latest_revision=LatestRevisionResponse(
@@ -145,6 +150,59 @@ def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) 
         session.refresh(album)
     except Exception:
         session.rollback()
+        raise
+    album.tracks.sort(key=lambda track: (track.disc_number, track.position))
+    return album_response(album)
+
+
+@app.get("/api/metadata/musicbrainz/releases/search", response_model=list[MusicBrainzSearchResult], tags=["metadata"])
+def search_musicbrainz_releases(query: Annotated[str, Query(min_length=1, max_length=300)], artist: str | None = None) -> list[MusicBrainzSearchResult]:
+    try:
+        return [MusicBrainzSearchResult.model_validate(item) for item in search_releases(query, artist)]
+    except MusicBrainzError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+@app.get("/api/metadata/musicbrainz/releases/{release_id}", response_model=MusicBrainzReleasePreview, tags=["metadata"])
+def get_musicbrainz_release(release_id: str) -> MusicBrainzReleasePreview:
+    try:
+        return MusicBrainzReleasePreview.model_validate(release_preview(release_id))
+    except MusicBrainzError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+@app.post("/api/metadata/musicbrainz/releases/import", response_model=AlbumResponse, status_code=status.HTTP_201_CREATED, tags=["metadata"])
+def import_musicbrainz_release(payload: MusicBrainzImportRequest, session: Session = Depends(get_session)) -> AlbumResponse:
+    if session.scalar(select(Album.id).where(Album.musicbrainz_release_id == payload.musicbrainz_release_id)) is not None:
+        raise HTTPException(status_code=409, detail="This MusicBrainz release has already been imported.")
+    tracks = [Track(disc_number=track.disc_number, position=track.position, title=track.title) for track in payload.tracks]
+    if len({(track.disc_number, track.position) for track in tracks}) != len(tracks):
+        raise HTTPException(status_code=422, detail="MusicBrainz tracks must have unique positions within each disc.")
+    if any(track.disc_number > payload.disc_count for track in tracks):
+        raise HTTPException(status_code=422, detail="MusicBrainz track disc exceeds the album disc count.")
+    album = Album(title=payload.title, musicbrainz_release_id=payload.musicbrainz_release_id, release_year=payload.year, release_type=payload.release_type, disc_count=payload.disc_count, tracks=tracks)
+    cover_filename = None
+    try:
+        session.add(album)
+        session.flush()
+        album_artist_ids = artist_ids_from_inputs(session, payload.artists)
+        set_album_artists(session, album, album_artist_ids)
+        for track, imported_track in zip(album.tracks, payload.tracks, strict=True):
+            if imported_track.primary_artists:
+                primary_ids = artist_ids_from_inputs(session, [ArtistCreditInput(name=name) for name in imported_track.primary_artists])
+                if primary_ids != album_artist_ids:
+                    set_track_artists(session, track, primary_ids, [])
+        if payload.cover_url:
+            try:
+                cover_filename = download_cover_from_url(payload.cover_url)
+                album.cover_filename = cover_filename
+            except CoverError:
+                pass
+        session.commit()
+        session.refresh(album)
+    except Exception:
+        session.rollback()
+        remove_cover_file(cover_filename)
         raise
     album.tracks.sort(key=lambda track: (track.disc_number, track.position))
     return album_response(album)
@@ -271,9 +329,15 @@ def get_album(album_id: int, session: Session = Depends(get_session)) -> AlbumRe
 @app.patch("/api/albums/{album_id}", response_model=AlbumResponse, tags=["albums"])
 def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends(get_session)) -> AlbumResponse:
     album = album_with_tracks(album_id, session)
+    if payload.musicbrainz_release_id and payload.musicbrainz_release_id != album.musicbrainz_release_id:
+        existing_id = session.scalar(select(Album.id).where(Album.musicbrainz_release_id == payload.musicbrainz_release_id))
+        if existing_id is not None:
+            raise HTTPException(status_code=409, detail="This MusicBrainz release is already linked to another album.")
     album.title = payload.title
     album.release_year = payload.year
     album.release_type = payload.release_type
+    if payload.musicbrainz_release_id:
+        album.musicbrainz_release_id = payload.musicbrainz_release_id
     try:
         set_album_artists(session, album, artist_ids_from_inputs(session, payload.artists))
         if payload.disc_count < album.disc_count and payload.tracks is None and any(track.disc_number > payload.disc_count for track in album.tracks):

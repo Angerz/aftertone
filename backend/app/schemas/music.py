@@ -106,6 +106,50 @@ class ArtistCreditInput(APIModel):
         return " ".join(value.split()) if value else None
 
 
+class MusicBrainzSearchResult(APIModel):
+    musicbrainz_release_id: str
+    musicbrainz_release_group_id: str | None = None
+    title: str
+    artists: list[str]
+    date: str | None = None
+    year: int | None = None
+    country: str | None = None
+    release_type: str | None = None
+    disc_count: int = 1
+    track_count: int = 0
+    disambiguation: str | None = None
+
+
+class MusicBrainzTrackPreview(APIModel):
+    disc_number: int = Field(ge=1, le=99)
+    position: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=300)
+    primary_artists: list[str] = Field(default_factory=list)
+
+
+class MusicBrainzReleasePreview(APIModel):
+    musicbrainz_release_id: str
+    title: str
+    artists: list[str]
+    year: int | None = Field(default=None, ge=1000, le=3000)
+    release_type: ReleaseType
+    source_release_type: str | None = None
+    disc_count: int = Field(ge=1, le=99)
+    tracks: list[MusicBrainzTrackPreview] = Field(min_length=1)
+    cover_url: str | None = None
+
+
+class MusicBrainzImportRequest(APIModel):
+    musicbrainz_release_id: str = Field(min_length=1, max_length=36)
+    title: str = Field(min_length=1, max_length=300)
+    artists: list[ArtistCreditInput] = Field(min_length=1)
+    year: int | None = Field(default=None, ge=1000, le=3000)
+    release_type: ReleaseType = ReleaseType.ALBUM
+    disc_count: int = Field(ge=1, le=99)
+    tracks: list[MusicBrainzTrackPreview] = Field(min_length=1)
+    cover_url: str | None = None
+
+
 class TrackCreditsUpdate(APIModel):
     primary_artist_ids: list[int] = Field(default_factory=list)
     featured_artist_ids: list[int] = Field(default_factory=list)
@@ -158,6 +202,7 @@ class AlbumUpdate(APIModel):
     release_type: ReleaseType
     disc_count: int = Field(default=1, ge=1, le=99)
     tracks: list[TrackUpdate] | None = Field(default=None, min_length=1)
+    musicbrainz_release_id: str | None = Field(default=None, min_length=1, max_length=36)
 
     @field_validator("title")
     @classmethod
@@ -214,6 +259,7 @@ class LegacyRatingSummaryResponse(APIModel):
 class AlbumResponse(APIModel):
     id: int
     title: str
+    musicbrainz_release_id: str | None = None
     artists: list[ArtistResponse]
     year: int | None
     release_type: ReleaseType

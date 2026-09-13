@@ -110,6 +110,19 @@ def test_update_album_metadata_rejects_other_album_state() -> None:
         AlbumUpdate.model_validate({"title": " ", "artists": [{"name": "Jeff Buckley"}], "year": 999, "release_type": "album"})
 
 
+def test_update_album_can_link_a_musicbrainz_release_only_once() -> None:
+    album = create_test_album()
+    other = create_test_album("Other")
+    payload = {"title": album.title, "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album", "musicbrainz_release_id": "a7b6d0f1-a1d8-4ddc-97d7-9fda31b5d6e4"}
+    with SessionLocal() as session:
+        updated = update_album(album.id, AlbumUpdate.model_validate(payload), session)
+    assert updated.musicbrainz_release_id == payload["musicbrainz_release_id"]
+    payload["title"] = other.title
+    with SessionLocal() as session, pytest.raises(HTTPException) as conflict:
+        update_album(other.id, AlbumUpdate.model_validate(payload), session)
+    assert conflict.value.status_code == 409
+
+
 def test_update_album_tracklist_reorders_renames_and_preserves_revision_snapshots() -> None:
     album = create_test_album()
     with SessionLocal() as session:
