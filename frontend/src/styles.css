@@ -69,3 +69,6 @@ button.album-card, button.album-card:hover:not(:disabled), button.album-card:foc
 /* Long titles remain complete, but no longer dominate the album journal hero. */
 .album-page-title h1.album-title-normal { font-size: clamp(2.2rem, 6vw, 4.7rem); line-height: .98; }.album-page-title h1.album-title-long { font-size: clamp(2.15rem, 4.8vw, 3.85rem); line-height: .95; }.album-page-title h1.album-title-very-long { font-size: clamp(2rem, 3.8vw, 3.2rem); letter-spacing: -.035em; line-height: .93; }
 @media (max-width: 700px) { .album-page-title h1.album-title-long { font-size: clamp(2.1rem, 9vw, 3.1rem); }.album-page-title h1.album-title-very-long { font-size: clamp(1.9rem, 8vw, 2.65rem); line-height: .96; } }
+
+.artist-catalogue-controls { align-items: end; display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr) 14rem; }.artist-catalogue-controls label { min-width: 0; }
+@media (max-width: 700px) { .artist-catalogue-controls { grid-template-columns: 1fr; } }

@@ -412,6 +412,37 @@ def test_artist_list_includes_primary_project_breakdown_and_average_only() -> No
     assert denzel.average_rating == Decimal("7")
 
 
+def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
+    with SessionLocal() as session:
+        def project(artist: str, title: str, score: str | None = None, release_type: str = "album"):
+            album = create_album(AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}], "release_type": release_type}), session)
+            if score is not None:
+                session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal(score)))
+            return album
+
+        aaron = project("Aaron", "Aaron album", "9")
+        project("Zulu", "Zulu album", "9")
+        alpha = project("Alpha", "Alpha album", "8")
+        project("Alpha", "Alpha EP", None, "ep")
+        project("Bravo", "Bravo album", "3")
+        project("No rating A", "No rating A album")
+        no_rating_z = project("No rating Z", "No rating Z album")
+        update_artist(aaron.artists[0].id, ArtistUpdate(is_active=False), session)
+        session.commit()
+
+        rating = list_artists(sort="rating", page=1, page_size=2, session=session)
+        all_ratings = list_artists(sort="rating", session=session)
+        projects = list_artists(sort="projects", session=session)
+        searched = list_artists(search="a", sort="projects", session=session)
+        inactive = list_artists(active=False, sort="rating", session=session)
+
+    assert [artist.name for artist in rating.items] == ["Aaron", "Zulu"]
+    assert [artist.name for artist in all_ratings.items] == ["Aaron", "Zulu", "Alpha", "Bravo", "No rating A", "No rating Z"]
+    assert projects.items[0].name == "Alpha" and projects.items[0].album_count == 2
+    assert [artist.name for artist in searched.items][:2] == ["Alpha", "Aaron"]
+    assert [artist.name for artist in inactive.items] == ["Aaron"]
+
+
 def test_new_and_existing_artists_default_to_active() -> None:
     with SessionLocal() as session:
         existing = Artist(name="Existing", normalized_name="existing")
