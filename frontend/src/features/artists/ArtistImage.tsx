@@ -6,7 +6,7 @@ export function artistInitials(name: string): string {
   return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
 }
 
-export function ArtistImage({ artist, className = "" }: { artist: Pick<Artist, "name" | "image_url">; className?: string }) {
-  if (artist.image_url) return <img className={`artist-image ${className}`} src={mediaUrl(artist.image_url)} alt={`Portrait of ${artist.name}`} />;
+export function ArtistImage({ artist, className = "", loading }: { artist: Pick<Artist, "name" | "image_url">; className?: string; loading?: "eager" | "lazy" }) {
+  if (artist.image_url) return <img className={`artist-image ${className}`} src={mediaUrl(artist.image_url)} alt={`Portrait of ${artist.name}`} loading={loading} />;
   return <div className={`artist-image artist-image-placeholder ${className}`} aria-hidden="true">{artistInitials(artist.name)}</div>;
 }
