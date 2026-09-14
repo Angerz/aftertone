@@ -248,13 +248,22 @@ def effective_rating_value():
 def list_albums(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 25,
     year: Annotated[int | None, Query(ge=1000, le=3000)] = None, decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
-    search: str | None = None, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating",
+    search: str | None = None, revisit: bool = False, unrated: bool = False, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating",
     session: Session = Depends(get_session),
 ) -> PaginatedResponse[AlbumResponse]:
     latest_revision_id, latest_legacy_id = latest_rating_ids()
     filters = album_filters(year, decade, search)
-    total = session.scalar(select(func.count(Album.id)).where(*filters)) or 0
     rating_value = effective_rating_value()
+    if revisit:
+        filters.append(Album.needs_revisit.is_(True))
+    if unrated:
+        filters.append(rating_value.is_(None))
+    total = session.scalar(
+        select(func.count(Album.id))
+        .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
+        .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
+        .where(*filters)
+    ) or 0
     recent_value = func.coalesce(RatingRevision.created_at, LegacyRating.imported_at)
     first_artist_name = select(Artist.name).join(AlbumArtist).where(AlbumArtist.album_id == Album.id).order_by(AlbumArtist.position).limit(1).scalar_subquery()
     ordering = {
@@ -289,16 +298,23 @@ def list_albums(
 def album_rating_summary(
     year: Annotated[int | None, Query(ge=1000, le=3000)] = None,
     decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+    revisit: bool = False,
+    unrated: bool = False,
     session: Session = Depends(get_session),
 ) -> AlbumRatingSummaryResponse:
     latest_revision_id, latest_legacy_id = latest_rating_ids()
     effective_rating = effective_rating_value()
+    filters = album_filters(year, decade, None)
+    if revisit:
+        filters.append(Album.needs_revisit.is_(True))
+    if unrated:
+        filters.append(effective_rating.is_(None))
     average, rated_count = session.execute(
         select(func.avg(effective_rating), func.count(effective_rating))
         .select_from(Album)
         .outerjoin(RatingRevision, RatingRevision.id == latest_revision_id)
         .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
-        .where(*album_filters(year, decade, None))
+        .where(*filters)
     ).one()
     return AlbumRatingSummaryResponse(average=average, rated_count=rated_count)
 
@@ -398,6 +414,7 @@ def artist_usage_counts():
 def artist_response(artist: Artist, album_count: int = 0, primary_track_count: int = 0, featured_track_count: int = 0, project_counts: dict[ReleaseType, int] | None = None, average_rating: Decimal | None = None, rated_project_count: int = 0) -> ArtistResponse:
     return ArtistResponse(
         id=artist.id, name=artist.name, normalized_name=artist.normalized_name, is_active=artist.is_active,
+        image_url=f"/media/covers/{artist.image_filename}" if artist.image_filename else None,
         album_count=album_count, primary_track_count=primary_track_count, featured_track_count=featured_track_count,
         is_unused=not (album_count or primary_track_count or featured_track_count),
         project_counts=project_counts or {}, average_rating=average_rating, rated_project_count=rated_project_count,
@@ -482,12 +499,14 @@ def delete_artist(artist_id: int, session: Session = Depends(get_session)) -> di
     counts = session.execute(select(album_count, primary_track_count, featured_track_count).where(Artist.id == artist_id)).one()
     if any(counts):
         raise HTTPException(status_code=409, detail="Artist cannot be deleted because it is still referenced.")
+    image_filename = artist.image_filename
     try:
         session.delete(artist)
         session.commit()
     except IntegrityError as error:
         session.rollback()
         raise HTTPException(status_code=409, detail="Artist cannot be deleted because it is still referenced.") from error
+    remove_cover_file(image_filename)
     return {"deleted": True}
 
 
@@ -504,6 +523,7 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
     albums = sorted((credit.album for credit in artist.album_credits), key=lambda album: album.id)
     return ArtistDetailResponse(
         id=artist.id, name=artist.name, is_active=artist.is_active, album_count=len(albums),
+        image_url=f"/media/covers/{artist.image_filename}" if artist.image_filename else None,
         primary_track_count=sum(credit.role == TrackArtistRole.PRIMARY for credit in artist.track_credits),
         featured_track_count=sum(credit.role == TrackArtistRole.FEATURED for credit in artist.track_credits),
         is_unused=not artist.album_credits and not artist.track_credits,
@@ -524,6 +544,63 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
             credit.track.album.release_year is None, -(credit.track.album.release_year or 0), credit.track.album.title.casefold(), credit.track.disc_number, credit.track.position,
         )) if credit.role == TrackArtistRole.FEATURED],
     )
+
+
+def replace_artist_image(artist: Artist, filename: str, session: Session) -> ArtistResponse:
+    old_filename = artist.image_filename
+    artist.image_filename = filename
+    try:
+        session.commit()
+        session.refresh(artist)
+    except Exception:
+        session.rollback()
+        remove_cover_file(filename)
+        raise
+    remove_cover_file(old_filename)
+    return artist_response(artist)
+
+
+@app.put("/api/artists/{artist_id}/image", response_model=ArtistResponse, tags=["artists"])
+def upload_artist_image(artist_id: int, file: UploadFile = File(...), session: Session = Depends(get_session)) -> ArtistResponse:
+    artist = session.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    try:
+        filename = save_cover(file)
+    except CoverError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    finally:
+        file.file.close()
+    return replace_artist_image(artist, filename, session)
+
+
+@app.delete("/api/artists/{artist_id}/image", response_model=ArtistResponse, tags=["artists"])
+def delete_artist_image(artist_id: int, session: Session = Depends(get_session)) -> ArtistResponse:
+    artist = session.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    old_filename = artist.image_filename
+    artist.image_filename = None
+    try:
+        session.commit()
+        session.refresh(artist)
+    except Exception:
+        session.rollback()
+        raise
+    remove_cover_file(old_filename)
+    return artist_response(artist)
+
+
+@app.post("/api/artists/{artist_id}/image/from-url", response_model=ArtistResponse, tags=["artists"])
+def import_artist_image_from_url(artist_id: int, payload: CoverFromUrl, session: Session = Depends(get_session)) -> ArtistResponse:
+    artist = session.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    try:
+        filename = download_cover_from_url(payload.url)
+    except CoverError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    return replace_artist_image(artist, filename, session)
 
 
 @app.patch("/api/tracks/{track_id}/artists", response_model=TrackResponse, tags=["tracks"])

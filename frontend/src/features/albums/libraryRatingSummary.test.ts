@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { formatLibraryAverage, ratedProjectLabel, shouldShowLibraryRatingSummary } from "./libraryRatingSummary";
 
 describe("Library rating summary helpers", () => {
-  it("hides the summary only for a non-blank search", () => {
+  it("hides the summary for a non-blank search or the unrated status filter", () => {
     expect(shouldShowLibraryRatingSummary(undefined)).toBe(true);
     expect(shouldShowLibraryRatingSummary("   ")).toBe(true);
     expect(shouldShowLibraryRatingSummary("Grace")).toBe(false);
+    expect(shouldShowLibraryRatingSummary(undefined, true)).toBe(false);
   });
 
   it("formats the real average to one decimal without the Library-card clamp", () => {

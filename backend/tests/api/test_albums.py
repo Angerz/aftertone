@@ -24,7 +24,7 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_cover, get_album, get_artist, get_revision, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_artist, update_track_artists, upload_cover
+from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_artist_image, delete_cover, get_album, get_artist, get_revision, import_artist_image_from_url, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_artist, update_track_artists, upload_artist_image, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
 from app.models.music import Album, Artist, LegacyRating, RatingRevision, Track
 from app.schemas.music import AlbumCreate, ArtistCreate, ArtistUpdate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
@@ -259,6 +259,36 @@ def test_artist_projects_include_the_current_effective_rating() -> None:
     assert detail.albums[0].rating == revision.final_rating
 
 
+def test_artist_images_are_local_replacable_and_do_not_affect_projects() -> None:
+    album = create_test_album()
+    artist_id = album.artists[0].id
+    with SessionLocal() as session:
+        uploaded = upload_artist_image(artist_id, image_upload(), session)
+        first_filename = session.get(Artist, artist_id).image_filename
+        detail = get_artist(artist_id, session)
+        listed = list_artists(session=session)
+    assert uploaded.image_url == f"/media/covers/{first_filename}"
+    assert detail.image_url == uploaded.image_url
+    assert listed.items[0].image_url == uploaded.image_url
+    assert detail.album_count == 1 and len(detail.albums) == 1
+    assert (TEST_COVER_DIR / first_filename).exists()
+    with SessionLocal() as session:
+        replaced = upload_artist_image(artist_id, image_upload("JPEG", "image/jpeg"), session)
+        second_filename = session.get(Artist, artist_id).image_filename
+    assert replaced.image_url == f"/media/covers/{second_filename}"
+    assert second_filename != first_filename
+    assert not (TEST_COVER_DIR / first_filename).exists()
+    with SessionLocal() as session, pytest.raises(HTTPException) as invalid:
+        upload_artist_image(artist_id, UploadFile(file=BytesIO(b"not an image"), filename="bad.png", headers=Headers({"content-type": "image/png"})), session)
+    assert invalid.value.status_code == 422
+    with SessionLocal() as session:
+        removed = delete_artist_image(artist_id, session)
+        detail = get_artist(artist_id, session)
+    assert removed.image_url is None and detail.image_url is None
+    assert not (TEST_COVER_DIR / second_filename).exists()
+    assert detail.album_count == 1 and len(detail.albums) == 1
+
+
 def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
     rows = [("Nineties", 2019, ["Alpha"]), ("First", 2020, ["Alpha", "Guest"]), ("Second", 2024, ["Beta"]), ("Last", 2029, ["Gamma"]), ("Future", 2030, ["Delta"]), ("Unknown", None, ["Unknown"])]
     with SessionLocal() as session:
@@ -276,6 +306,43 @@ def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
     assert [item.title for item in artist_search.items] == ["First"]
     assert empty.items == [] and empty.page == 99
     assert facets.decades == {2010: [2019], 2020: [2020, 2024, 2029], 2030: [2030]}
+
+
+def test_library_status_filters_use_current_revisit_and_effective_rating_before_pagination() -> None:
+    with SessionLocal() as session:
+        revisit_native = create_album(AlbumCreate.model_validate({**album_payload("Revisit native"), "year": 2020}), session)
+        revisit_legacy = create_album(AlbumCreate.model_validate({**album_payload("Revisit legacy"), "year": 2021}), session)
+        zero = create_album(AlbumCreate.model_validate({**album_payload("Zero"), "year": 2021}), session)
+        revisit_unrated = create_album(AlbumCreate.model_validate({**album_payload("Revisit unrated"), "year": 2022}), session)
+        unrated = create_album(AlbumCreate.model_validate({**album_payload("Unrated"), "year": 2024}), session)
+        session.get(Album, revisit_native.id).needs_revisit = True
+        session.get(Album, revisit_legacy.id).needs_revisit = True
+        session.get(Album, revisit_unrated.id).needs_revisit = True
+        session.add_all([
+            RatingRevision(album_id=revisit_native.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("8.5")),
+            LegacyRating(album_id=revisit_legacy.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["7"], pre_formula="=(7)/1", computed_final_rating=Decimal("7.5")),
+            RatingRevision(album_id=zero.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("0")),
+        ])
+        session.commit()
+        revisit = list_albums(revisit=True, sort="title", session=session)
+        only_unrated = list_albums(unrated=True, sort="title", session=session)
+        both = list_albums(revisit=True, unrated=True, sort="title", session=session)
+        year_revisit = list_albums(year=2020, revisit=True, session=session)
+        decade_unrated = list_albums(decade=2020, unrated=True, sort="title", session=session)
+        searched = list_albums(search="legacy", revisit=True, session=session)
+        paged = list_albums(revisit=True, page=2, page_size=1, sort="title", session=session)
+        revisit_summary = album_rating_summary(revisit=True, session=session)
+
+    assert [item.title for item in revisit.items] == ["Revisit legacy", "Revisit native", "Revisit unrated"]
+    assert [item.title for item in only_unrated.items] == ["Revisit unrated", "Unrated"]
+    assert "Zero" not in [item.title for item in only_unrated.items]
+    assert [item.title for item in both.items] == ["Revisit unrated"]
+    assert [item.title for item in year_revisit.items] == ["Revisit native"]
+    assert [item.title for item in decade_unrated.items] == ["Revisit unrated", "Unrated"]
+    assert [item.title for item in searched.items] == ["Revisit legacy"]
+    assert paged.total == 3 and paged.total_pages == 3 and [item.title for item in paged.items] == ["Revisit native"]
+    assert float(revisit_summary.average) == pytest.approx(8.0)
+    assert revisit_summary.rated_count == 2
 
 
 def test_album_rating_summary_aggregates_effective_ratings_across_all_filter_matches() -> None:
@@ -608,6 +675,28 @@ def test_import_cover_from_url_replaces_existing_cover(monkeypatch) -> None:
         response = import_cover_from_url(album.id, CoverFromUrl(url="https://covers.example/replacement.jpg"), session)
     assert response.cover_url is not None
     assert not (cover_dir() / first_filename).exists()
+    assert (cover_dir() / second_filename).is_file()
+
+
+def test_import_artist_image_from_url_reuses_safe_replacement_pipeline(monkeypatch) -> None:
+    album = create_test_album()
+    artist_id = album.artists[0].id
+    first_filename = save_cover_data(image_bytes("PNG"), "image/png")
+    second_filename = save_cover_data(image_bytes("JPEG"), "image/jpeg")
+    with SessionLocal() as session:
+        session.get(Artist, artist_id).image_filename = first_filename
+        session.commit()
+        monkeypatch.setattr("app.main.download_cover_from_url", lambda _url: second_filename)
+        imported = import_artist_image_from_url(artist_id, CoverFromUrl(url="https://covers.example/artist.jpg"), session)
+    assert imported.image_url == f"/media/covers/{second_filename}"
+    assert not (cover_dir() / first_filename).exists()
+    assert (cover_dir() / second_filename).is_file()
+    with SessionLocal() as session:
+        monkeypatch.setattr("app.main.download_cover_from_url", lambda _url: (_ for _ in ()).throw(CoverError("Cover URL did not return a JPEG, PNG, or WebP image.")))
+        with pytest.raises(HTTPException) as error:
+            import_artist_image_from_url(artist_id, CoverFromUrl(url="https://covers.example/bad.jpg"), session)
+        assert session.get(Artist, artist_id).image_filename == second_filename
+    assert error.value.status_code == 422
     assert (cover_dir() / second_filename).is_file()
 
 

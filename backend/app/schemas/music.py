@@ -59,6 +59,7 @@ class ArtistResponse(APIModel):
     name: str
     normalized_name: str | None = None
     is_active: bool = True
+    image_url: str | None = None
     album_count: int = 0
     primary_track_count: int = 0
     featured_track_count: int = 0

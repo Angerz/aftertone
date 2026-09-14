@@ -1,5 +1,5 @@
-export function shouldShowLibraryRatingSummary(search: string | undefined): boolean {
-  return !search?.trim();
+export function shouldShowLibraryRatingSummary(search: string | undefined, unrated = false): boolean {
+  return !search?.trim() && !unrated;
 }
 
 export function formatLibraryAverage(average: number | null): string {
