@@ -4,6 +4,8 @@ import { artistFilterParams, canDeleteArtist, pickerArtistParams } from "./artis
 describe("artist maintenance helpers", () => {
   it("maps All, Active, Inactive, and Unused filters to API filters", () => {
     expect(artistFilterParams("all")).toEqual({});
+    expect(artistFilterParams("primary")).toEqual({ scope: "primary" });
+    expect(artistFilterParams("featuring")).toEqual({ scope: "featuring" });
     expect(artistFilterParams("active")).toEqual({ active: true });
     expect(artistFilterParams("inactive")).toEqual({ active: false });
     expect(artistFilterParams("unused")).toEqual({ unused: true });

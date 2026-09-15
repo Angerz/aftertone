@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artistSortOptions, buildArtistSortQuery, parseArtistSort } from "./artistSorting";
+import { artistSortOptions, buildArtistCatalogueQuery, buildArtistSortQuery, parseArtistFilter, parseArtistSort } from "./artistSorting";
 
 describe("artist sorting navigation", () => {
   it("offers Name as the default alongside Rating and Projects", () => {
@@ -17,5 +17,12 @@ describe("artist sorting navigation", () => {
     expect(buildArtistSortQuery("name").toString()).toBe("");
     expect(buildArtistSortQuery("rating").toString()).toBe("sort=rating");
     expect(buildArtistSortQuery("projects").toString()).toBe("sort=projects");
+  });
+
+  it("restores and serializes catalogue filters alongside sorting", () => {
+    expect(parseArtistFilter(new URLSearchParams("filter=primary"))).toBe("primary");
+    expect(parseArtistFilter(new URLSearchParams("filter=featuring"))).toBe("featuring");
+    expect(parseArtistFilter(new URLSearchParams("filter=invalid"))).toBe("all");
+    expect(buildArtistCatalogueQuery("projects", "primary").toString()).toBe("sort=projects&filter=primary");
   });
 });

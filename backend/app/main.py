@@ -444,7 +444,7 @@ def artist_project_summaries():
 @app.get("/api/artists", response_model=PaginatedResponse[ArtistResponse], tags=["artists"])
 def list_artists(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 50, search: str | None = None,
-    active: bool | None = None, unused: bool = False, sort: Literal["name", "rating", "projects"] = "name", session: Session = Depends(get_session),
+    active: bool | None = None, unused: bool = False, scope: Literal["all", "primary", "featuring"] = "all", sort: Literal["name", "rating", "projects"] = "name", session: Session = Depends(get_session),
 ) -> PaginatedResponse[ArtistResponse]:
     album_count, primary_track_count, featured_track_count = artist_usage_counts()
     project_counts, average_rating, rated_project_count = artist_project_summaries()
@@ -453,6 +453,10 @@ def list_artists(
         filters.append(Artist.is_active == active)
     if unused:
         filters.extend([album_count == 0, primary_track_count == 0, featured_track_count == 0])
+    if scope == "primary":
+        filters.append(album_count > 0)
+    elif scope == "featuring":
+        filters.extend([album_count == 0, featured_track_count > 0])
     total = session.scalar(select(func.count(Artist.id)).where(*filters)) or 0
     name_order = (func.lower(Artist.name), Artist.id)
     ordering = name_order if sort == "name" else (

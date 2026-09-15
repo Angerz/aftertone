@@ -443,6 +443,28 @@ def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
     assert [artist.name for artist in inactive.items] == ["Aaron"]
 
 
+def test_artist_list_primary_and_featuring_scopes_are_distinct() -> None:
+    with SessionLocal() as session:
+        create_album(AlbumCreate.model_validate({**album_payload("Primary album"), "artists": [{"name": "Primary artist"}]}), session)
+        create_album(AlbumCreate.model_validate({**album_payload("Primary EP"), "artists": [{"name": "Primary artist"}], "release_type": "ep"}), session)
+        featured_album = create_album(AlbumCreate.model_validate({**album_payload("Featured album"), "artists": [{"name": "Host artist"}]}), session)
+        featuring_only = create_artist(ArtistCreate(name="Featuring only"), session)
+        both = create_artist(ArtistCreate(name="Both credits"), session)
+        update_track_artists(featured_album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[featuring_only.id, both.id]), session)
+        create_album(AlbumCreate.model_validate({**album_payload("Both album"), "artists": [{"name": "Both credits"}]}), session)
+        unused = create_artist(ArtistCreate(name="Unused artist"), session)
+        session.commit()
+        primary_rows = list_artists(scope="primary", sort="projects", session=session)
+        featuring_rows = list_artists(scope="featuring", session=session)
+        searched = list_artists(search="primary", scope="primary", session=session)
+        unused_rows = list_artists(unused=True, session=session)
+
+    assert [artist.name for artist in primary_rows.items] == ["Primary artist", "Both credits", "Host artist"]
+    assert [artist.name for artist in featuring_rows.items] == ["Featuring only"]
+    assert [artist.name for artist in searched.items] == ["Primary artist"]
+    assert [artist.name for artist in unused_rows.items] == ["Unused artist"]
+
+
 def test_new_and_existing_artists_default_to_active() -> None:
     with SessionLocal() as session:
         existing = Artist(name="Existing", normalized_name="existing")
