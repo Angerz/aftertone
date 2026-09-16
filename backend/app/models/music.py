@@ -95,6 +95,7 @@ class Track(Base):
 
     album: Mapped[Album] = relationship(back_populates="tracks")
     artist_credits: Mapped[list[TrackArtist]] = relationship(back_populates="track", cascade="all, delete-orphan")
+    favorite_song_entry: Mapped[FavoriteSongEntry | None] = relationship(back_populates="track", uselist=False)
 
 
 class AlbumArtist(Base):
@@ -122,6 +123,26 @@ class TrackArtist(Base):
 
     track: Mapped[Track] = relationship(back_populates="artist_credits")
     artist: Mapped[Artist] = relationship(back_populates="track_credits")
+
+
+class FavoriteSongEntry(Base):
+    __tablename__ = "favorite_song_entries"
+    __table_args__ = (UniqueConstraint("track_id", name="uq_favorite_song_track"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="RESTRICT"))
+    base_score: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    emotional_connection: Mapped[Decimal] = mapped_column(Numeric(3, 2))
+    replay_value: Mapped[Decimal] = mapped_column(Numeric(3, 2))
+    historical_relevance: Mapped[Decimal] = mapped_column(Numeric(3, 2))
+    originality: Mapped[Decimal] = mapped_column(Numeric(3, 2))
+    genre: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_score: Mapped[Decimal] = mapped_column(Numeric(6, 4))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    track: Mapped[Track] = relationship(back_populates="favorite_song_entry")
 
 
 class RatingRevision(Base):

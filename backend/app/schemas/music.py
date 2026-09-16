@@ -281,6 +281,73 @@ class TrackResponse(APIModel):
     uses_album_artists: bool = True
 
 
+class FavoriteSongEntryWrite(APIModel):
+    track_id: int = Field(ge=1)
+    base_score: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
+    emotional_connection: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    replay_value: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    historical_relevance: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    originality: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    genre: str | None = Field(default=None, max_length=100)
+    notes: str | None = None
+
+
+class FavoriteSongEntryUpdate(APIModel):
+    base_score: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
+    emotional_connection: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    replay_value: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    historical_relevance: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    originality: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    genre: str | None = Field(default=None, max_length=100)
+    notes: str | None = None
+
+
+class FavoriteSongEntryResponse(APIModel):
+    id: int
+    global_position: int
+    track_id: int
+    track_title: str
+    artists: list[ArtistResponse]
+    album_id: int
+    album_title: str
+    album_year: int | None
+    cover_url: str | None
+    disc_number: int
+    track_position: int
+    base_score: Decimal
+    emotional_connection: Decimal
+    replay_value: Decimal
+    historical_relevance: Decimal
+    originality: Decimal
+    genre: str | None
+    notes: str | None
+    final_score: Decimal
+
+
+class FavoriteSongTrackSearchResponse(APIModel):
+    track_id: int
+    track_title: str
+    artists: list[ArtistResponse]
+    album_id: int
+    album_title: str
+    album_year: int | None
+    cover_url: str | None
+    latest_track_score: Decimal | None
+    already_ranked_position: int | None
+
+
+class FavoriteSongImportRowResponse(APIModel):
+    source_row: int; source_position: str | None; song: str | None; artist: str | None; album: str | None; year: int | None; genre: str | None
+    base_score: Decimal | None; emotional_connection: Decimal | None; replay_value: Decimal | None; historical_relevance: Decimal | None; originality: Decimal | None
+    legacy_final_score: Decimal | None; calculated_final_score: Decimal | None; status: str; matched_track_id: int | None; candidates: list[dict]; warnings: list[str]; errors: list[str]
+
+
+class FavoriteSongImportPreviewResponse(APIModel): rows: list[FavoriteSongImportRowResponse]
+class FavoriteSongImportCommitRow(FavoriteSongEntryWrite): source_row: int
+class FavoriteSongImportCommit(APIModel): rows: list[FavoriteSongImportCommitRow]
+class FavoriteSongImportCommitResponse(APIModel): imported: int; skipped: int
+
+
 class LatestRevisionResponse(APIModel):
     id: int
     created_at: datetime
