@@ -5,6 +5,10 @@ Summary: Local music ratings journal API
 Requires-Python: >=3.13
 Requires-Dist: alembic<2,>=1.14
 Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: httpx<1,>=0.27
+Requires-Dist: openpyxl<4,>=3.1
+Requires-Dist: pillow<12,>=11
+Requires-Dist: python-multipart<1,>=0.0.20
 Requires-Dist: sqlalchemy<3,>=2.0
 Requires-Dist: uvicorn[standard]<1,>=0.32
 Provides-Extra: dev
