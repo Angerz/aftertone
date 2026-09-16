@@ -30,6 +30,15 @@ Copy the sample environment file and adjust loopback ports only if they conflict
 cp .env.example .env
 ```
 
+With the included Makefile, prepare dependencies once and then start both processes together:
+
+```bash
+make setup
+make dev
+```
+
+`make dev` applies pending migrations, starts the API and Vite, and stops both when you press Ctrl+C. For an already configured checkout, `make dev` is the only command needed to start the app. Run `make help` for the remaining commands.
+
 Create and activate a virtual environment, install the API and test dependencies, then migrate and run it:
 
 ```bash
@@ -58,6 +67,14 @@ npm run dev -- --port "$AFTERTONE_WEB_PORT"
 The Vite server is explicitly loopback-bound in `vite.config.ts`. The API permits requests only from `AFTERTONE_WEB_ORIGIN` (the sample value is the local Vite URL).
 
 Album covers are stored in `AFTERTONE_COVER_DIR` (by default `backend/data/covers`). A complete backup consists of the SQLite database and that cover directory.
+
+## Daily database backup
+
+`scripts/backup_aftertone.sh` makes a consistent SQLite copy in `backend/data/backups/`. Schedule it once a day with cron:
+
+```cron
+0 3 * * * /home/angerz/projects/aftertone/scripts/backup_aftertone.sh >> /home/angerz/projects/aftertone/backend/data/backups/backup.log 2>&1
+```
 
 ## Tests
 
