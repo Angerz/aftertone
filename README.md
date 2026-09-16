@@ -1,6 +1,8 @@
 # Aftertone
 
-Aftertone is a local, single-user music-rating journal. It preserves albums, per-track scores and notes, and immutable rating revisions rather than overwriting past opinions. It includes a visual album library, structured artists and credits, legacy Excel import and reconciliation, and Album Momentum.
+Aftertone is my local music journal: a private place for my listening history, my thoughts, and my love of music. I use it to keep albums, per-track scores, and notes without overwriting what I felt at a particular moment. It includes a visual album library, structured artists and credits, legacy Excel import and reconciliation, and Album Momentum.
+
+It is intentionally not a public catalogue, streaming service, or social network. My collection and reflections stay on my own machine.
 
 ## Features
 
@@ -9,7 +11,7 @@ Aftertone is a local, single-user music-rating journal. It preserves albums, per
 - Per-track scores and notes with canonical album-rating calculation.
 - Immutable rating history and Rate Again from the latest revision.
 - Revisit markers for albums worth returning to.
-- Canonical artists, multi-artist albums, and featured track credits.
+- Canonical artists, multi-artist albums, featured track credits, portraits, and optional person/group metadata.
 - Legacy Excel preview/import and explicit tracklist reconciliation.
 - Album Momentum for viewing an album's track-score trajectory.
 
@@ -95,7 +97,7 @@ Full interactive API documentation is available at `/docs` while the backend is 
 
 ### Artists
 
-- Artist list, creation, and detail endpoints.
+- Artist list, creation, detail, and metadata update endpoints.
 - Structured ordered album artists and primary/featured track credits.
 
 ### Legacy
@@ -116,7 +118,7 @@ See `docs/decisions/` for the full rationale.
 
 ## Known limitations
 
-- Aftertone is a local, single-user application with no authentication or sync.
+- Aftertone is intentionally private and local: it has no authentication, sharing, or sync because it is for me, not a public audience.
 - There is no browser E2E suite yet.
 - Legacy multi-artist strings are not automatically split into separate artists.
 - The backend currently emits Pydantic deprecation warnings that should be resolved before Pydantic v3.
