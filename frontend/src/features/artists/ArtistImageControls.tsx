@@ -38,6 +38,7 @@ export function ArtistImageControls({ artist, onUpdated }: { artist: Artist; onU
     finally { setBusy(false); }
   }
   async function remove() {
+    if (!window.confirm("Remove artist image?")) return;
     setBusy(true); setActionError(null);
     try { onUpdated(await deleteArtistImage(artist.id)); }
     catch (cause) { setActionError((cause as Error).message); }

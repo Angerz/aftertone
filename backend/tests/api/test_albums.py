@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 from io import BytesIO
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -287,6 +288,55 @@ def test_artist_images_are_local_replacable_and_do_not_affect_projects() -> None
     assert removed.image_url is None and detail.image_url is None
     assert not (TEST_COVER_DIR / second_filename).exists()
     assert detail.album_count == 1 and len(detail.albums) == 1
+
+
+def test_artist_person_metadata_serializes_and_preserves_credits() -> None:
+    album = create_test_album()
+    artist_id = album.artists[0].id
+    with SessionLocal() as session:
+        updated = update_artist(artist_id, ArtistUpdate(
+            name="Jeffrey Buckley", artist_type="person", country_code="US",
+            birth_date=date(1966, 11, 17), death_date=date(1997, 5, 29),
+            formed_year=None, dissolved_year=None,
+        ), session)
+        detail = get_artist(artist_id, session)
+    assert updated.artist_type.value == "person"
+    assert (detail.name, detail.country_code, detail.birth_date, detail.death_date) == (
+        "Jeffrey Buckley", "US", date(1966, 11, 17), date(1997, 5, 29),
+    )
+    assert [project.id for project in detail.albums] == [album.id]
+    assert detail.primary_track_count == 0
+
+
+def test_artist_group_metadata_and_type_specific_validation() -> None:
+    with SessionLocal() as session:
+        artist = create_artist(ArtistCreate(name="Daft Punk"), session)
+        group = update_artist(artist.id, ArtistUpdate(
+            artist_type="group", country_code="FR", formed_year=1993, dissolved_year=2021,
+            birth_date=None, death_date=None,
+        ), session)
+        assert (group.artist_type.value, group.country_code, group.formed_year, group.dissolved_year) == ("group", "FR", 1993, 2021)
+        with pytest.raises(HTTPException, match="Dissolved year"):
+            update_artist(artist.id, ArtistUpdate(dissolved_year=1990), session)
+        with pytest.raises(HTTPException, match="Person dates"):
+            update_artist(artist.id, ArtistUpdate(birth_date=date(1970, 1, 1)), session)
+
+
+def test_artist_metadata_rejects_invalid_person_dates_and_normalized_name_duplicates() -> None:
+    with SessionLocal() as session:
+        first = create_artist(ArtistCreate(name="David Bowie"), session)
+        second = create_artist(ArtistCreate(name="Different Artist"), session)
+        update_artist(first.id, ArtistUpdate(artist_type="person", birth_date=date(1947, 1, 8), death_date=None, formed_year=None, dissolved_year=None), session)
+        with pytest.raises(HTTPException, match="Death date"):
+            update_artist(first.id, ArtistUpdate(death_date=date(1940, 1, 1)), session)
+        with pytest.raises(HTTPException, match="already exists"):
+            update_artist(second.id, ArtistUpdate(name="  david   bowie  "), session)
+
+
+def test_new_artists_default_to_unknown_type() -> None:
+    with SessionLocal() as session:
+        artist = create_artist(ArtistCreate(name="Unknown Artist"), session)
+    assert artist.artist_type.value == "unknown"
 
 
 def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
@@ -611,6 +661,28 @@ def test_revision_validates_complete_unique_album_tracklist() -> None:
     with SessionLocal() as session, pytest.raises(HTTPException) as incomplete:
         create_revision(album.id, RatingRevisionCreate.model_validate(payload), session)
     assert incomplete.value.status_code == 422
+
+
+def test_revision_allows_unrated_excluded_track_and_preserves_null_score() -> None:
+    album = create_test_album()
+    payload = revision_payload(album)
+    payload["tracks"][1]["score"] = None
+    with SessionLocal() as session:
+        revision = create_revision(album.id, RatingRevisionCreate.model_validate(payload), session)
+    assert revision.tracks[1].score is None
+    assert revision.tracks[1].include_in_pre_rating is False
+    assert revision.pre_rating == Decimal("10")
+
+    zero_payload = revision_payload(album)
+    zero_payload["tracks"][1]["score"] = "0"
+    with SessionLocal() as session:
+        zero_revision = create_revision(album.id, RatingRevisionCreate.model_validate(zero_payload), session)
+    assert zero_revision.tracks[1].score == Decimal("0")
+    assert zero_revision.tracks[1].score != revision.tracks[1].score
+
+    payload["tracks"][1]["include_in_pre_rating"] = True
+    with pytest.raises(ValidationError, match="requires a score"):
+        RatingRevisionCreate.model_validate(payload)
 
 
 def test_revision_and_album_not_found_or_mismatched_path() -> None:

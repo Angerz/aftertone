@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.music import ReleaseType
+from app.models.music import ArtistType, ReleaseType
 
 
 class APIModel(BaseModel):
@@ -51,7 +51,40 @@ class ArtistCreate(APIModel):
 
 
 class ArtistUpdate(APIModel):
-    is_active: bool
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    is_active: bool | None = None
+    artist_type: ArtistType | None = None
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    birth_date: date | None = None
+    death_date: date | None = None
+    formed_year: int | None = Field(default=None, ge=1, le=9999)
+    dissolved_year: int | None = Field(default=None, ge=1, le=9999)
+
+    @field_validator("name")
+    @classmethod
+    def strip_optional_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        if len(value) != 2 or not value.isalpha():
+            raise ValueError("must be a two-letter ISO country code")
+        return value
+
+    @model_validator(mode="after")
+    def name_must_not_be_null_when_supplied(self) -> "ArtistUpdate":
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name must not be null")
+        return self
 
 
 class ArtistResponse(APIModel):
@@ -59,6 +92,12 @@ class ArtistResponse(APIModel):
     name: str
     normalized_name: str | None = None
     is_active: bool = True
+    artist_type: ArtistType = ArtistType.UNKNOWN
+    country_code: str | None = None
+    birth_date: date | None = None
+    death_date: date | None = None
+    formed_year: int | None = None
+    dissolved_year: int | None = None
     image_url: str | None = None
     album_count: int = 0
     primary_track_count: int = 0
@@ -351,9 +390,15 @@ class LegacyRatingDetailResponse(APIModel):
 
 class TrackRatingRevisionCreate(APIModel):
     track_id: int = Field(ge=1)
-    score: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
+    score: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("10"))
     include_in_pre_rating: bool = True
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def included_tracks_require_a_score(self) -> "TrackRatingRevisionCreate":
+        if self.include_in_pre_rating and self.score is None:
+            raise ValueError("A track included in PRE requires a score.")
+        return self
 
 
 class RatingRevisionCreate(APIModel):

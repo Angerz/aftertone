@@ -12,7 +12,7 @@ TEN = Decimal("10")
 
 @dataclass(frozen=True)
 class TrackScore:
-    score: Decimal
+    score: Decimal | None
     include_in_pre_rating: bool = True
 
 
@@ -37,8 +37,11 @@ def calculate_rating(
     _validate_score(emotion, "emotion")
     all_tracks = list(track_scores)
     for track in all_tracks:
-        _validate_score(track.score, "track score")
-    included = [track.score for track in all_tracks if track.include_in_pre_rating]
+        if track.score is not None:
+            _validate_score(track.score, "track score")
+        elif track.include_in_pre_rating:
+            raise ValueError("an included track score is required")
+    included = [track.score for track in all_tracks if track.include_in_pre_rating and track.score is not None]
     if not included:
         return RatingResult(None, None, None, None)
 

@@ -72,4 +72,11 @@ describe("ratingPreviewCalculator backend parity", () => {
     expect(preview.badExperience).toBe(0);
     expect(preview.finalRating).toBe(10);
   });
+
+  it("ignores an unrated excluded track in the live calculation", () => {
+    const preview = ratingPreviewCalculator([{ score: 8, includeInPreRating: true }, { score: 7, includeInPreRating: true }, { score: null, includeInPreRating: false }], 0, 5);
+    expect(preview.preRating).toBe(7.5);
+    expect(preview.badExperience).toBe(0);
+    expect(preview.finalRating).toBe(7.5);
+  });
 });

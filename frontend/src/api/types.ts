@@ -1,6 +1,8 @@
 export type ReleaseType = "album" | "ep" | "mixtape" | "compilation" | "live" | "reissue";
+export type ArtistType = "person" | "group" | "unknown";
 export interface PaginatedResponse<T> { items: T[]; page: number; page_size: number; total: number; total_pages: number }
-export interface Artist { id: number; name: string; normalized_name?: string | null; is_active?: boolean; image_url?: string | null; album_count?: number; primary_track_count?: number; featured_track_count?: number; is_unused?: boolean; project_counts?: Partial<Record<ReleaseType, number>>; average_rating?: number | null; rated_project_count?: number }
+export interface Artist { id: number; name: string; normalized_name?: string | null; is_active?: boolean; artist_type?: ArtistType; country_code?: string | null; birth_date?: string | null; death_date?: string | null; formed_year?: number | null; dissolved_year?: number | null; image_url?: string | null; album_count?: number; primary_track_count?: number; featured_track_count?: number; is_unused?: boolean; project_counts?: Partial<Record<ReleaseType, number>>; average_rating?: number | null; rated_project_count?: number }
+export interface ArtistUpdate { name?: string; is_active?: boolean; artist_type?: ArtistType; country_code?: string | null; birth_date?: string | null; death_date?: string | null; formed_year?: number | null; dissolved_year?: number | null }
 export interface ArtistCreditInput { artist_id?: number; name?: string }
 export interface ArtistAlbum { id: number; title: string; year: number | null; release_type: ReleaseType; cover_url: string | null; artists: Artist[]; rating: number | null }
 export interface TrackAppearance { track_id: number; track_title: string; track_position: number; album_id: number; album_title: string; album_year: number | null; album_release_type: ReleaseType; album_cover_url: string | null; score: number | null; role: "featured" }
@@ -19,7 +21,7 @@ export interface TrackUpdate { id?: number; disc_number: number; title: string }
 export interface AlbumUpdate { title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType; disc_count: number; tracks?: TrackUpdate[]; musicbrainz_release_id?: string | null }
 export interface TrackCreditsUpdate { primary_artist_ids: number[]; featured_artist_ids: number[] }
 export interface TrackRatingRevision { track_id: number; title: string; disc_number: number; position: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
-export interface TrackRatingRevisionCreate { track_id: number; score: number; include_in_pre_rating: boolean; notes: string | null }
+export interface TrackRatingRevisionCreate { track_id: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
 export interface RatingRevisionDetail {
   id: number; album_id: number; created_at: string; pre_rating: number | null;
   coherence: number; coherence_notes: string | null; emotion: number; emotion_notes: string | null;

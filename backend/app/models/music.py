@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,6 +24,12 @@ class TrackArtistRole(str, enum.Enum):
     FEATURED = "featured"
 
 
+class ArtistType(str, enum.Enum):
+    PERSON = "person"
+    GROUP = "group"
+    UNKNOWN = "unknown"
+
+
 class Artist(Base):
     __tablename__ = "artists"
 
@@ -31,6 +37,16 @@ class Artist(Base):
     name: Mapped[str] = mapped_column(String(300))
     normalized_name: Mapped[str] = mapped_column(String(300), unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    artist_type: Mapped[ArtistType] = mapped_column(
+        Enum(ArtistType, values_callable=lambda enum: [item.value for item in enum]),
+        default=ArtistType.UNKNOWN,
+        server_default=ArtistType.UNKNOWN.value,
+    )
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    death_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    formed_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dissolved_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

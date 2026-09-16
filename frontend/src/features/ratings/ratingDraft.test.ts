@@ -15,7 +15,12 @@ describe("revisionToRatingDraft", () => {
 
   it("uses defaults for current tracks absent from the snapshot", () => {
     const { draft } = revisionToRatingDraft(album, revision);
-    expect(draft.tracks[1]).toMatchObject({ trackId: 20, score: "", include: true, notes: "" });
+    expect(draft.tracks[1]).toMatchObject({ trackId: 20, score: null, include: true, notes: "" });
+  });
+
+  it("preserves an unrated excluded snapshot track as null", () => {
+    const unrated = { ...revision, tracks: [{ ...revision.tracks[0], score: null }] };
+    expect(revisionToRatingDraft(album, unrated).draft.tracks[0]).toMatchObject({ score: null, include: false });
   });
 
   it("ignores snapshot tracks that no longer exist in the current album", () => {

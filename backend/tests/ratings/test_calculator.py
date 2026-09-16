@@ -14,6 +14,16 @@ def test_pre_rating_averages_included_tracks_only() -> None:
     assert result.pre_rating == Decimal("9")
 
 
+def test_unrated_excluded_track_does_not_affect_calculation() -> None:
+    result = calculate_rating([score("10"), TrackScore(None, False)], coherence=Decimal("0"), emotion=Decimal("5"))
+    assert (result.pre_rating, result.bad_experience, result.final_rating) == (Decimal("10"), Decimal("0"), Decimal("10"))
+
+
+def test_unrated_included_track_is_invalid() -> None:
+    with pytest.raises(ValueError, match="included track score is required"):
+        calculate_rating([TrackScore(None, True)], coherence=Decimal("0"), emotion=Decimal("5"))
+
+
 def test_no_included_tracks_has_no_rating() -> None:
     assert calculate_rating([score("8", False)], coherence=Decimal("5"), emotion=Decimal("5")).final_rating is None
 
@@ -52,4 +62,3 @@ def test_known_grace_formula() -> None:
 def test_known_tpab_formula() -> None:
     result = calculate_rating([score("9.8625")], coherence=Decimal("10"), emotion=Decimal("8.5"))
     assert result.final_rating == pytest.approx(Decimal("10.2"))
-

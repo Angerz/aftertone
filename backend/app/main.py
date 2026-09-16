@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import SessionLocal
 from app.config import cover_dir, web_origins
-from app.models.music import Album, AlbumArtist, Artist, LegacyRating, RatingRevision, ReleaseType, Track, TrackArtist, TrackArtistRole, TrackRatingRevision
+from app.models.music import Album, AlbumArtist, Artist, ArtistType, LegacyRating, RatingRevision, ReleaseType, Track, TrackArtist, TrackArtistRole, TrackRatingRevision
 from app.imports.legacy_excel import commit_rows, preview_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
@@ -414,6 +414,8 @@ def artist_usage_counts():
 def artist_response(artist: Artist, album_count: int = 0, primary_track_count: int = 0, featured_track_count: int = 0, project_counts: dict[ReleaseType, int] | None = None, average_rating: Decimal | None = None, rated_project_count: int = 0) -> ArtistResponse:
     return ArtistResponse(
         id=artist.id, name=artist.name, normalized_name=artist.normalized_name, is_active=artist.is_active,
+        artist_type=artist.artist_type, country_code=artist.country_code, birth_date=artist.birth_date,
+        death_date=artist.death_date, formed_year=artist.formed_year, dissolved_year=artist.dissolved_year,
         image_url=f"/media/covers/{artist.image_filename}" if artist.image_filename else None,
         album_count=album_count, primary_track_count=primary_track_count, featured_track_count=featured_track_count,
         is_unused=not (album_count or primary_track_count or featured_track_count),
@@ -491,8 +493,40 @@ def update_artist(artist_id: int, payload: ArtistUpdate, session: Session = Depe
     artist = session.get(Artist, artist_id)
     if artist is None:
         raise HTTPException(status_code=404, detail="artist not found")
-    artist.is_active = payload.is_active
-    session.commit()
+    fields = payload.model_fields_set
+    next_type = payload.artist_type if "artist_type" in fields else artist.artist_type
+    next_birth_date = payload.birth_date if "birth_date" in fields else artist.birth_date
+    next_death_date = payload.death_date if "death_date" in fields else artist.death_date
+    next_formed_year = payload.formed_year if "formed_year" in fields else artist.formed_year
+    next_dissolved_year = payload.dissolved_year if "dissolved_year" in fields else artist.dissolved_year
+    if next_type == ArtistType.PERSON:
+        if next_formed_year is not None or next_dissolved_year is not None:
+            raise HTTPException(status_code=422, detail="Group dates must be cleared for a person artist.")
+        if next_birth_date and next_death_date and next_death_date < next_birth_date:
+            raise HTTPException(status_code=422, detail="Death date must not be before birth date.")
+    elif next_type == ArtistType.GROUP:
+        if next_birth_date is not None or next_death_date is not None:
+            raise HTTPException(status_code=422, detail="Person dates must be cleared for a group artist.")
+        if next_formed_year and next_dissolved_year and next_dissolved_year < next_formed_year:
+            raise HTTPException(status_code=422, detail="Dissolved year must not be before formed year.")
+    elif any(value is not None for value in (next_birth_date, next_death_date, next_formed_year, next_dissolved_year)):
+        raise HTTPException(status_code=422, detail="Type-specific dates require artist type person or group.")
+    if "name" in fields:
+        assert payload.name is not None
+        normalized_name = normalize_artist_name(payload.name)
+        duplicate = session.scalar(select(Artist).where(Artist.normalized_name == normalized_name, Artist.id != artist_id))
+        if duplicate is not None:
+            raise HTTPException(status_code=409, detail="An artist with this name already exists.")
+        artist.name = payload.name
+        artist.normalized_name = normalized_name
+    for field in ("is_active", "artist_type", "country_code", "birth_date", "death_date", "formed_year", "dissolved_year"):
+        if field in fields:
+            setattr(artist, field, getattr(payload, field))
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="An artist with this name already exists.") from error
     album_count, primary_track_count, featured_track_count = artist_usage_counts()
     counts = session.execute(select(album_count, primary_track_count, featured_track_count).where(Artist.id == artist_id)).one()
     return artist_response(artist, *counts)
@@ -531,6 +565,8 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
     albums = sorted((credit.album for credit in artist.album_credits), key=lambda album: album.id)
     return ArtistDetailResponse(
         id=artist.id, name=artist.name, is_active=artist.is_active, album_count=len(albums),
+        artist_type=artist.artist_type, country_code=artist.country_code, birth_date=artist.birth_date,
+        death_date=artist.death_date, formed_year=artist.formed_year, dissolved_year=artist.dissolved_year,
         image_url=f"/media/covers/{artist.image_filename}" if artist.image_filename else None,
         primary_track_count=sum(credit.role == TrackArtistRole.PRIMARY for credit in artist.track_credits),
         featured_track_count=sum(credit.role == TrackArtistRole.FEATURED for credit in artist.track_credits),
