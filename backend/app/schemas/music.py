@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -319,6 +319,9 @@ class FavoriteSongEntryResponse(APIModel):
     genre: str | None
     notes: str | None
     final_score: Decimal
+    rank_movement: Literal["unchanged", "up", "down", "new"]
+    rank_delta: int
+    top_100_entered_at: datetime | None
 
 
 class FavoriteSongTrackSearchResponse(APIModel):
