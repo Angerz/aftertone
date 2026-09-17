@@ -8,7 +8,7 @@ import { ArtistSearchPicker } from "../artists/ArtistSearchPicker";
 import { MusicBrainzAlbumEnrichment } from "./MusicBrainzAlbumEnrichment";
 import { musicBrainzTracklist } from "./musicbrainz";
 
-const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
+const releaseTypes: ReleaseType[] = ["album", "soundtrack", "single", "unknown", "ep", "mixtape", "compilation", "live", "reissue"];
 type Credits = Record<number, { primary: Artist[]; featured: Artist[] }>;
 
 export function EditAlbumPage({ albumId, onCancel, onSaved }: { albumId: number; onCancel: () => void; onSaved: () => void }) {

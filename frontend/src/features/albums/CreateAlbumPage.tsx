@@ -3,7 +3,7 @@ import { createAlbum } from "../../api/albums";
 import type { AlbumCreate, ReleaseType } from "../../api/types";
 import { MusicBrainzImportPanel } from "./MusicBrainzImportPanel";
 
-const releaseTypes: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
+const releaseTypes: ReleaseType[] = ["album", "soundtrack", "single", "unknown", "ep", "mixtape", "compilation", "live", "reissue"];
 type DraftTrack = { title: string; discNumber: number };
 
 export function CreateAlbumPage({ onCancel, onCreated }: { onCancel: () => void; onCreated: (id: number) => void }) {
