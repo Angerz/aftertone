@@ -663,6 +663,41 @@ def favorite_song_rows(session: Session) -> list[FavoriteSongEntry]:
     return sorted(rows, key=favorite_song_sort_key)
 
 
+def favorite_song_top_100_positions(session: Session) -> dict[int, int]:
+    """Capture canonical Top 100 positions before a ranking-changing write."""
+    return {entry.id: position for position, entry in enumerate(favorite_song_rows(session), 1) if position <= 100}
+
+
+def apply_favorite_song_rank_history(rows: list[FavoriteSongEntry], previous_positions: dict[int, int], now: datetime) -> None:
+    """Persist history against canonical rows, never presentation order."""
+    for position, entry in enumerate(rows, 1):
+        entry.previous_canonical_position = previous_positions.get(entry.id)
+        if position <= 100:
+            if entry.previous_canonical_position is None or entry.top_100_entered_at is None:
+                entry.top_100_entered_at = now
+        else:
+            entry.top_100_entered_at = None
+
+
+def sync_favorite_song_rank_history(session: Session, previous_positions: dict[int, int]) -> list[FavoriteSongEntry]:
+    """Persist movement relative to the meaningful ranking state before a write."""
+    rows = favorite_song_rows(session)
+    current_positions = {entry.id: position for position, entry in enumerate(rows, 1) if position <= 100}
+    if current_positions != previous_positions:
+        apply_favorite_song_rank_history(rows, previous_positions, datetime.now(timezone.utc))
+    return rows
+
+
+def favorite_song_movement(position: int, previous_position: int | None) -> tuple[str, int]:
+    if position > 100 or previous_position == position:
+        return "unchanged", 0
+    if previous_position is None:
+        return "new", 0
+    if previous_position > position:
+        return "up", previous_position - position
+    return "down", position - previous_position
+
+
 def favorite_song_artists(track: Track) -> list[ArtistResponse]:
     primary = [credit.artist for credit in sorted(track.artist_credits, key=lambda credit: credit.position) if credit.role == TrackArtistRole.PRIMARY]
     artists = primary or [credit.artist for credit in sorted(track.album.artist_credits, key=lambda credit: credit.position)]
@@ -671,6 +706,7 @@ def favorite_song_artists(track: Track) -> list[ArtistResponse]:
 
 def favorite_song_response(entry: FavoriteSongEntry, position: int) -> FavoriteSongEntryResponse:
     track, album = entry.track, entry.track.album
+    movement, delta = favorite_song_movement(position, entry.previous_canonical_position)
     return FavoriteSongEntryResponse(
         id=entry.id, global_position=position, track_id=track.id, track_title=track.title, artists=favorite_song_artists(track),
         album_id=album.id, album_title=album.title, album_year=album.release_year,
@@ -678,6 +714,7 @@ def favorite_song_response(entry: FavoriteSongEntry, position: int) -> FavoriteS
         disc_number=track.disc_number, track_position=track.position, base_score=entry.base_score,
         emotional_connection=entry.emotional_connection, replay_value=entry.replay_value, originality=entry.originality,
         genre=entry.genre, notes=entry.notes, final_score=entry.final_score,
+        rank_movement=movement, rank_delta=delta, top_100_entered_at=entry.top_100_entered_at,
     )
 
 
@@ -703,6 +740,7 @@ def list_favorite_songs(view: Literal["top", "candidates"] = "top", search: str 
 
 @app.post("/api/favorite-songs", response_model=FavoriteSongEntryResponse, status_code=status.HTTP_201_CREATED, tags=["favorite songs"])
 def create_favorite_song(payload: FavoriteSongEntryWrite, session: Session = Depends(get_session)) -> FavoriteSongEntryResponse:
+    previous_positions = favorite_song_top_100_positions(session)
     track = session.get(Track, payload.track_id)
     if track is None:
         raise HTTPException(status_code=404, detail="track not found")
@@ -710,11 +748,12 @@ def create_favorite_song(payload: FavoriteSongEntryWrite, session: Session = Dep
     write_favorite_song(entry, payload)
     session.add(entry)
     try:
-        session.commit()
+        session.flush()
     except IntegrityError as error:
         session.rollback()
         raise HTTPException(status_code=409, detail="Track is already in the favorite-song ranking.") from error
-    rows = favorite_song_rows(session)
+    rows = sync_favorite_song_rank_history(session, previous_positions)
+    session.commit()
     return favorite_song_response(entry, rows.index(entry) + 1)
 
 
@@ -732,9 +771,11 @@ def update_favorite_song(entry_id: int, payload: FavoriteSongEntryUpdate, sessio
     entry = session.get(FavoriteSongEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="favorite song not found")
+    previous_positions = favorite_song_top_100_positions(session)
     write_favorite_song(entry, payload)
+    session.flush()
+    rows = sync_favorite_song_rank_history(session, previous_positions)
     session.commit()
-    rows = favorite_song_rows(session)
     return favorite_song_response(entry, rows.index(entry) + 1)
 
 
@@ -743,7 +784,11 @@ def delete_favorite_song(entry_id: int, session: Session = Depends(get_session))
     entry = session.get(FavoriteSongEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="favorite song not found")
-    session.delete(entry); session.commit()
+    previous_positions = favorite_song_top_100_positions(session)
+    session.delete(entry)
+    session.flush()
+    sync_favorite_song_rank_history(session, previous_positions)
+    session.commit()
     return {"deleted": True}
 
 

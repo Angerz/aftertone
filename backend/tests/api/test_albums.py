@@ -457,7 +457,7 @@ def test_artist_list_includes_primary_project_breakdown_and_average_only() -> No
         session.commit()
         denzel = list_artists(search="denzel", session=session).items[0]
 
-    assert denzel.project_counts == {"album": 2, "ep": 1, "mixtape": 1, "compilation": 0, "live": 0, "reissue": 0}
+    assert denzel.project_counts == {"album": 2, "ep": 1, "mixtape": 1, "compilation": 0, "live": 0, "reissue": 0, "single": 0, "soundtrack": 0, "unknown": 0}
     assert denzel.rated_project_count == 2
     assert denzel.average_rating == Decimal("7")
 
