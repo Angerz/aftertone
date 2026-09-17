@@ -104,9 +104,29 @@ AGENTS.md         project conventions
 
 ## API
 
-### Favorite Songs scoring
+### Favorite Songs
 
-Favorite Songs use a separate personal-ranking formula: Puntuación 25%, Conexión emocional 55%, Replay value 15%, and Originalidad 5%. Originalidad is subjective: how singular a song feels based on the listener's own experience. Historical relevance is not part of this ranking formula.
+Favorite Songs is a separate, fully personal ranking of individual catalogue tracks. Add songs manually by selecting an existing track, then recording your assessment; it does not create or alter album-rating revisions.
+
+The ranking has two views:
+
+- **Top 100** shows only positions 1–100.
+- **Candidates** shows every ranked song after position 100, so a song can remain part of the journal without being in the Top 100.
+
+Each ranking row can be expanded independently to inspect its stored score breakdown and personal notes. Opening one song never closes another; Edit and Remove remain separate actions.
+
+Favorite Songs use a separate, completely subjective formula:
+
+```text
+final score = Puntuación × 25%
+            + Conexión emocional × 55%
+            + Replay value × 15%
+            + Originalidad × 5%
+```
+
+`Puntuación` measures the song as an isolated work, while the other criteria record the listener's personal response. `Originalidad` specifically means how singular the song feels based on the listener's own experience, not an objective claim of historical innovation. Historical relevance is not part of the Favorite Songs formula.
+
+Songs are ordered first by final score. Exact score ties are deterministic: emotional connection, replay value, base score, originality, then track title.
 
 Full interactive API documentation is available at `/docs` while the backend is running.
 

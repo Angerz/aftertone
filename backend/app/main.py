@@ -649,13 +649,18 @@ def import_artist_image_from_url(artist_id: int, payload: CoverFromUrl, session:
     return replace_artist_image(artist, filename, session)
 
 
+def favorite_song_sort_key(entry: FavoriteSongEntry) -> tuple:
+    """Canonical deterministic ordering for every favorite-song position."""
+    return (-entry.final_score, -entry.emotional_connection, -entry.replay_value, -entry.base_score, -entry.originality, entry.track.title.casefold())
+
+
 def favorite_song_rows(session: Session) -> list[FavoriteSongEntry]:
     rows = session.scalars(select(FavoriteSongEntry).options(
         selectinload(FavoriteSongEntry.track).selectinload(Track.album).selectinload(Album.artist_credits).selectinload(AlbumArtist.artist),
         selectinload(FavoriteSongEntry.track).selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
         selectinload(FavoriteSongEntry.track).selectinload(Track.album).selectinload(Album.revisions).selectinload(RatingRevision.track_ratings),
     )).all()
-    return sorted(rows, key=lambda entry: (-entry.final_score, -entry.emotional_connection, -entry.base_score, -entry.replay_value, -entry.originality, entry.track.title.casefold()))
+    return sorted(rows, key=favorite_song_sort_key)
 
 
 def favorite_song_artists(track: Track) -> list[ArtistResponse]:
