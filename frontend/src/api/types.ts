@@ -1,4 +1,4 @@
-export type ReleaseType = "album" | "ep" | "mixtape" | "compilation" | "live" | "reissue";
+export type ReleaseType = "album" | "soundtrack" | "single" | "unknown" | "ep" | "mixtape" | "compilation" | "live" | "reissue";
 export type ArtistType = "person" | "group" | "unknown";
 export interface PaginatedResponse<T> { items: T[]; page: number; page_size: number; total: number; total_pages: number }
 export interface Artist { id: number; name: string; normalized_name?: string | null; is_active?: boolean; artist_type?: ArtistType; country_code?: string | null; birth_date?: string | null; death_date?: string | null; formed_year?: number | null; dissolved_year?: number | null; image_url?: string | null; album_count?: number; primary_track_count?: number; featured_track_count?: number; is_unused?: boolean; project_counts?: Partial<Record<ReleaseType, number>>; average_rating?: number | null; rated_project_count?: number }
@@ -9,11 +9,9 @@ export interface TrackAppearance { track_id: number; track_title: string; track_
 export interface ArtistDetail extends Artist { albums: ArtistAlbum[]; featured_appearances: TrackAppearance[] }
 
 export interface Track { id: number; disc_number: number; position: number; title: string; primary_artists: Artist[]; featured_artists: Artist[]; uses_album_artists: boolean }
-export interface FavoriteSongEntry { id: number; global_position: number; track_id: number; track_title: string; artists: Artist[]; album_id: number; album_title: string; album_year: number | null; cover_url: string | null; disc_number: number; track_position: number; base_score: number; emotional_connection: number; replay_value: number; historical_relevance: number; originality: number; genre: string | null; notes: string | null; final_score: number }
-export interface FavoriteSongWrite { track_id: number; base_score: number; emotional_connection: number; replay_value: number; historical_relevance: number; originality: number; genre: string | null; notes: string | null }
+export interface FavoriteSongEntry { id: number; global_position: number; track_id: number; track_title: string; artists: Artist[]; album_id: number; album_title: string; album_year: number | null; cover_url: string | null; disc_number: number; track_position: number; base_score: number; emotional_connection: number; replay_value: number; originality: number; genre: string | null; notes: string | null; final_score: number }
+export interface FavoriteSongWrite { track_id: number; base_score: number; emotional_connection: number; replay_value: number; originality: number; genre: string | null; notes: string | null }
 export interface FavoriteSongTrackSearch { track_id: number; track_title: string; artists: Artist[]; album_id: number; album_title: string; album_year: number | null; cover_url: string | null; latest_track_score: number | null; already_ranked_position: number | null }
-export interface FavoriteSongImportRow { source_row: number; source_position: string | null; song: string | null; artist: string | null; album: string | null; year: number | null; genre: string | null; base_score: number | null; emotional_connection: number | null; replay_value: number | null; historical_relevance: number | null; originality: number | null; legacy_final_score: number | null; calculated_final_score: number | null; status: string; matched_track_id: number | null; candidates: { track_id: number; title: string; album: string; year: number | null }[]; warnings: string[]; errors: string[] }
-export interface FavoriteSongImportPreview { rows: FavoriteSongImportRow[] }
 export interface LatestRevision { id: number; created_at: string; pre_rating: number | null; final_rating: number | null }
 export interface LatestLegacyRating { id: number; imported_at: string; legacy_final_rating: number | null; computed_final_rating: number | null; reconciliation_status: string }
 export interface Album {

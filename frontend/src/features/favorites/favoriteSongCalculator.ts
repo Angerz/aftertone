@@ -1,1 +1,1 @@
-export const favoriteSongScore = (base: number, emotional: number, replay: number, historical: number, originality: number) => base * .25 + emotional + replay * .2 + historical * .1 + originality * .2;
+export const favoriteSongScore = (base: number, emotional: number, replay: number, originality: number) => base * .25 + emotional * 1.1 + replay * .3 + originality * .1;

@@ -12,6 +12,9 @@ from app.database import Base
 
 class ReleaseType(str, enum.Enum):
     ALBUM = "album"
+    SOUNDTRACK = "soundtrack"
+    SINGLE = "single"
+    UNKNOWN = "unknown"
     EP = "ep"
     MIXTAPE = "mixtape"
     COMPILATION = "compilation"
@@ -134,7 +137,6 @@ class FavoriteSongEntry(Base):
     base_score: Mapped[Decimal] = mapped_column(Numeric(4, 2))
     emotional_connection: Mapped[Decimal] = mapped_column(Numeric(3, 2))
     replay_value: Mapped[Decimal] = mapped_column(Numeric(3, 2))
-    historical_relevance: Mapped[Decimal] = mapped_column(Numeric(3, 2))
     originality: Mapped[Decimal] = mapped_column(Numeric(3, 2))
     genre: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

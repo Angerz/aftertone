@@ -104,6 +104,10 @@ AGENTS.md         project conventions
 
 ## API
 
+### Favorite Songs scoring
+
+Favorite Songs use a separate personal-ranking formula: Puntuación 25%, Conexión emocional 55%, Replay value 15%, and Originalidad 5%. Originalidad is subjective: how singular a song feels based on the listener's own experience. Historical relevance is not part of this ranking formula.
+
 Full interactive API documentation is available at `/docs` while the backend is running.
 
 ### Albums

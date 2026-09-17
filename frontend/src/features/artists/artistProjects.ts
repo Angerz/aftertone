@@ -2,6 +2,9 @@ import type { ArtistAlbum, ArtistDetail, ReleaseType } from "../../api/types";
 
 const releaseTypeLabels: Record<ReleaseType, string> = {
   album: "Albums",
+  soundtrack: "Soundtracks",
+  single: "Singles",
+  unknown: "Other projects",
   ep: "EPs",
   mixtape: "Mixtapes",
   compilation: "Compilations",
@@ -9,10 +12,11 @@ const releaseTypeLabels: Record<ReleaseType, string> = {
   reissue: "Reissues",
 };
 
-const releaseTypeOrder: ReleaseType[] = ["album", "ep", "mixtape", "compilation", "live", "reissue"];
+const releaseTypeOrder: ReleaseType[] = ["album", "soundtrack", "single", "unknown", "ep", "mixtape", "compilation", "live", "reissue"];
 
 const projectCountLabels: Record<ReleaseType, [string, string]> = {
-  album: ["album", "albums"], ep: ["EP", "EPs"], mixtape: ["mixtape", "mixtapes"],
+  album: ["album", "albums"], soundtrack: ["soundtrack", "soundtracks"], ep: ["EP", "EPs"], mixtape: ["mixtape", "mixtapes"],
+  single: ["single", "singles"], unknown: ["other project", "other projects"],
   compilation: ["compilation", "compilations"], live: ["live project", "live projects"], reissue: ["reissue", "reissues"],
 };
 

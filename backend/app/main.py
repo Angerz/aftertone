@@ -16,7 +16,6 @@ from app.database import SessionLocal
 from app.config import cover_dir, web_origins
 from app.models.music import Album, AlbumArtist, Artist, ArtistType, FavoriteSongEntry, LegacyRating, RatingRevision, ReleaseType, Track, TrackArtist, TrackArtistRole, TrackRatingRevision
 from app.imports.legacy_excel import commit_rows, preview_workbook
-from app.imports.favorite_songs_excel import preview_favorite_workbook
 from app.services.legacy_reconciliation import ReconciliationError, preview_legacy_reconciliation, reconcile_legacy_rating
 from app.schemas.music import (
     AlbumCreate,
@@ -53,7 +52,6 @@ from app.schemas.music import (
     TrackRatingRevisionResponse,
     TrackResponse,
     FavoriteSongEntryWrite, FavoriteSongEntryUpdate, FavoriteSongEntryResponse, FavoriteSongTrackSearchResponse,
-    FavoriteSongImportRowResponse, FavoriteSongImportPreviewResponse, FavoriteSongImportCommit, FavoriteSongImportCommitResponse,
 )
 from app.favorite_songs.calculator import calculate_favorite_song_score
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
@@ -657,7 +655,7 @@ def favorite_song_rows(session: Session) -> list[FavoriteSongEntry]:
         selectinload(FavoriteSongEntry.track).selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
         selectinload(FavoriteSongEntry.track).selectinload(Track.album).selectinload(Album.revisions).selectinload(RatingRevision.track_ratings),
     )).all()
-    return sorted(rows, key=lambda entry: (-entry.final_score, -entry.emotional_connection, -entry.base_score, -entry.replay_value, -entry.originality, -entry.historical_relevance, entry.track.title.casefold()))
+    return sorted(rows, key=lambda entry: (-entry.final_score, -entry.emotional_connection, -entry.base_score, -entry.replay_value, -entry.originality, entry.track.title.casefold()))
 
 
 def favorite_song_artists(track: Track) -> list[ArtistResponse]:
@@ -673,8 +671,7 @@ def favorite_song_response(entry: FavoriteSongEntry, position: int) -> FavoriteS
         album_id=album.id, album_title=album.title, album_year=album.release_year,
         cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
         disc_number=track.disc_number, track_position=track.position, base_score=entry.base_score,
-        emotional_connection=entry.emotional_connection, replay_value=entry.replay_value,
-        historical_relevance=entry.historical_relevance, originality=entry.originality,
+        emotional_connection=entry.emotional_connection, replay_value=entry.replay_value, originality=entry.originality,
         genre=entry.genre, notes=entry.notes, final_score=entry.final_score,
     )
 
@@ -683,13 +680,12 @@ def write_favorite_song(entry: FavoriteSongEntry, payload: FavoriteSongEntryWrit
     entry.base_score = payload.base_score
     entry.emotional_connection = payload.emotional_connection
     entry.replay_value = payload.replay_value
-    entry.historical_relevance = payload.historical_relevance
     entry.originality = payload.originality
     entry.genre = payload.genre.strip() or None if payload.genre else None
     entry.notes = payload.notes.strip() or None if payload.notes else None
     entry.final_score = calculate_favorite_song_score(
         base_score=payload.base_score, emotional_connection=payload.emotional_connection,
-        replay_value=payload.replay_value, historical_relevance=payload.historical_relevance, originality=payload.originality,
+        replay_value=payload.replay_value, originality=payload.originality,
     )
 
 
@@ -705,7 +701,7 @@ def create_favorite_song(payload: FavoriteSongEntryWrite, session: Session = Dep
     track = session.get(Track, payload.track_id)
     if track is None:
         raise HTTPException(status_code=404, detail="track not found")
-    entry = FavoriteSongEntry(track_id=track.id, base_score=Decimal("0"), emotional_connection=Decimal("0"), replay_value=Decimal("0"), historical_relevance=Decimal("0"), originality=Decimal("0"), final_score=Decimal("0"))
+    entry = FavoriteSongEntry(track_id=track.id, base_score=Decimal("0"), emotional_connection=Decimal("0"), replay_value=Decimal("0"), originality=Decimal("0"), final_score=Decimal("0"))
     write_favorite_song(entry, payload)
     session.add(entry)
     try:
@@ -764,24 +760,6 @@ def search_tracks(q: str = Query(min_length=1, max_length=300), session: Session
         score = next((rating.score for rating in latest.track_ratings if rating.track_id == track.id), None) if latest else None
         results.append(FavoriteSongTrackSearchResponse(track_id=track.id, track_title=track.title, artists=favorite_song_artists(track), album_id=track.album.id, album_title=track.album.title, album_year=track.album.release_year, cover_url=f"/media/covers/{track.album.cover_filename}" if track.album.cover_filename else None, latest_track_score=score, already_ranked_position=positions.get(track.id)))
     return results[:50]
-
-
-@app.post("/api/favorite-songs/import/preview", response_model=FavoriteSongImportPreviewResponse, tags=["favorite songs"])
-def preview_favorite_song_import(file: UploadFile = File(...), session: Session = Depends(get_session)) -> FavoriteSongImportPreviewResponse:
-    try: rows = preview_favorite_workbook(file.file.read(), session)
-    except ValueError as error: raise HTTPException(status_code=422, detail=str(error)) from error
-    return FavoriteSongImportPreviewResponse(rows=[FavoriteSongImportRowResponse(**row.__dict__) for row in rows])
-
-
-@app.post("/api/favorite-songs/import/commit", response_model=FavoriteSongImportCommitResponse, tags=["favorite songs"])
-def commit_favorite_song_import(payload: FavoriteSongImportCommit, session: Session = Depends(get_session)) -> FavoriteSongImportCommitResponse:
-    imported = skipped = 0
-    for item in payload.rows:
-        if session.get(Track, item.track_id) is None or session.scalar(select(FavoriteSongEntry.id).where(FavoriteSongEntry.track_id == item.track_id)) is not None: skipped += 1; continue
-        entry=FavoriteSongEntry(track_id=item.track_id, base_score=Decimal("0"), emotional_connection=Decimal("0"), replay_value=Decimal("0"), historical_relevance=Decimal("0"), originality=Decimal("0"), final_score=Decimal("0")); write_favorite_song(entry, item); session.add(entry); imported += 1
-    try: session.commit()
-    except IntegrityError: session.rollback(); raise HTTPException(status_code=409, detail="One or more tracks are already ranked.")
-    return FavoriteSongImportCommitResponse(imported=imported, skipped=skipped)
 
 
 @app.patch("/api/tracks/{track_id}/artists", response_model=TrackResponse, tags=["tracks"])
