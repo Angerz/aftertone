@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Annotated, Literal
 
@@ -671,9 +671,13 @@ def favorite_song_top_100_positions(session: Session) -> dict[int, int]:
 def apply_favorite_song_rank_history(rows: list[FavoriteSongEntry], previous_positions: dict[int, int], now: datetime) -> None:
     """Persist history against canonical rows, never presentation order."""
     for position, entry in enumerate(rows, 1):
-        entry.previous_canonical_position = previous_positions.get(entry.id)
+        previous_position = previous_positions.get(entry.id)
         if position <= 100:
-            if entry.previous_canonical_position is None or entry.top_100_entered_at is None:
+            if previous_position != position:
+                entry.last_rank_from = previous_position
+                entry.last_rank_to = position
+                entry.last_rank_changed_at = now
+            if previous_position is None or entry.top_100_entered_at is None:
                 entry.top_100_entered_at = now
         else:
             entry.top_100_entered_at = None
@@ -688,14 +692,21 @@ def sync_favorite_song_rank_history(session: Session, previous_positions: dict[i
     return rows
 
 
-def favorite_song_movement(position: int, previous_position: int | None) -> tuple[str, int]:
-    if position > 100 or previous_position == position:
+def favorite_song_movement(entry: FavoriteSongEntry, position: int, now: datetime | None = None) -> tuple[str, int]:
+    changed_at = entry.last_rank_changed_at
+    if position > 100 or changed_at is None:
         return "unchanged", 0
-    if previous_position is None:
+    if changed_at.tzinfo is None:
+        changed_at = changed_at.replace(tzinfo=timezone.utc)
+    if (now or datetime.now(timezone.utc)) - changed_at > timedelta(days=30):
+        return "unchanged", 0
+    if entry.last_rank_from is None:
         return "new", 0
-    if previous_position > position:
-        return "up", previous_position - position
-    return "down", position - previous_position
+    if entry.last_rank_to is None:
+        return "unchanged", 0
+    if entry.last_rank_to < entry.last_rank_from:
+        return "up", entry.last_rank_from - entry.last_rank_to
+    return "down", entry.last_rank_to - entry.last_rank_from
 
 
 def favorite_song_artists(track: Track) -> list[ArtistResponse]:
@@ -706,7 +717,7 @@ def favorite_song_artists(track: Track) -> list[ArtistResponse]:
 
 def favorite_song_response(entry: FavoriteSongEntry, position: int) -> FavoriteSongEntryResponse:
     track, album = entry.track, entry.track.album
-    movement, delta = favorite_song_movement(position, entry.previous_canonical_position)
+    movement, delta = favorite_song_movement(entry, position)
     return FavoriteSongEntryResponse(
         id=entry.id, global_position=position, track_id=track.id, track_title=track.title, artists=favorite_song_artists(track),
         album_id=album.id, album_title=album.title, album_year=album.release_year,
