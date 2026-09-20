@@ -57,6 +57,7 @@ from app.favorite_songs.calculator import calculate_favorite_song_score
 from app.services.rating_revisions import RevisionTracksError, create_rating_revision
 from app.services.covers import CoverError, download_cover_from_url, remove_cover_file, save_cover
 from app.services.artists import artist_ids_from_inputs, get_or_create_artist, normalize_artist_name, set_album_artists, set_track_artists
+from app.services.search import normalize_search_text
 from app.integrations.musicbrainz import MusicBrainzError, release_preview, search_releases
 from decimal import Decimal
 
@@ -452,7 +453,8 @@ def list_artists(
 ) -> PaginatedResponse[ArtistResponse]:
     album_count, primary_track_count, featured_track_count = artist_usage_counts()
     project_counts, average_rating, rated_project_count = artist_project_summaries()
-    filters = [func.lower(Artist.name).like(f"%{search.strip().casefold()}%")] if search and search.strip() else []
+    needle = normalize_search_text(search) if search else ""
+    filters = [func.search_normalize(Artist.name).like(f"%{needle}%")] if needle else []
     if active is not None:
         filters.append(Artist.is_active == active)
     if unused:
@@ -745,8 +747,8 @@ def write_favorite_song(entry: FavoriteSongEntry, payload: FavoriteSongEntryWrit
 @app.get("/api/favorite-songs", response_model=list[FavoriteSongEntryResponse], tags=["favorite songs"])
 def list_favorite_songs(view: Literal["top", "candidates"] = "top", search: str | None = None, session: Session = Depends(get_session)) -> list[FavoriteSongEntryResponse]:
     rows = favorite_song_rows(session)
-    needle = search.strip().casefold() if search else ""
-    return [favorite_song_response(entry, position) for position, entry in enumerate(rows, 1) if (position <= 100 if view == "top" else position > 100) and (not needle or needle in entry.track.title.casefold() or needle in entry.track.album.title.casefold() or any(needle in artist.name.casefold() for artist in favorite_song_artists(entry.track)))]
+    needle = normalize_search_text(search) if search else ""
+    return [favorite_song_response(entry, position) for position, entry in enumerate(rows, 1) if (position <= 100 if view == "top" else position > 100) and (not needle or needle in normalize_search_text(entry.track.title) or needle in normalize_search_text(entry.track.album.title) or any(needle in normalize_search_text(artist.name) for artist in favorite_song_artists(entry.track)))]
 
 
 @app.post("/api/favorite-songs", response_model=FavoriteSongEntryResponse, status_code=status.HTTP_201_CREATED, tags=["favorite songs"])
@@ -812,10 +814,10 @@ def search_tracks(q: str = Query(min_length=1, max_length=300), session: Session
         selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
         selectinload(Track.album).selectinload(Album.revisions).selectinload(RatingRevision.track_ratings),
     )).all()
-    needle = q.strip().casefold(); results = []
+    needle = normalize_search_text(q); results = []
     for track in tracks:
         artist_names = " ".join(artist.name for artist in favorite_song_artists(track))
-        if needle not in track.title.casefold() and needle not in track.album.title.casefold() and needle not in artist_names.casefold():
+        if needle not in normalize_search_text(track.title) and needle not in normalize_search_text(track.album.title) and needle not in normalize_search_text(artist_names):
             continue
         latest = max(track.album.revisions, key=lambda revision: (revision.created_at, revision.id), default=None)
         score = next((rating.score for rating in latest.track_ratings if rating.track_id == track.id), None) if latest else None

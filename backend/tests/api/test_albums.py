@@ -25,9 +25,9 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_artist_image, delete_cover, get_album, get_artist, get_revision, import_artist_image_from_url, import_cover_from_url, list_albums, list_artists, list_revisions, mark_for_revisit, update_album, update_artist, update_track_artists, upload_artist_image, upload_cover
+from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_artist_image, delete_cover, get_album, get_artist, get_revision, import_artist_image_from_url, import_cover_from_url, list_albums, list_artists, list_favorite_songs, list_revisions, mark_for_revisit, search_tracks, update_album, update_artist, update_track_artists, upload_artist_image, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.models.music import Album, Artist, LegacyRating, RatingRevision, Track
+from app.models.music import Album, Artist, FavoriteSongEntry, LegacyRating, RatingRevision, Track
 from app.schemas.music import AlbumCreate, ArtistCreate, ArtistUpdate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
@@ -438,6 +438,24 @@ def test_artist_pagination_search_and_ordering() -> None:
     assert first.total == 3 and first.total_pages == 2
     assert [item.name for item in searched.items] == ["Beta"]
     assert empty.items == [] and empty.total == 3
+
+
+def test_catalogue_search_normalizes_accents_and_apostrophes() -> None:
+    with SessionLocal() as session:
+        album = create_album(AlbumCreate.model_validate({
+            **album_payload("Álbum de Álvaro"), "artists": [{"name": "Álvaro Díaz"}],
+            "tracks": [{"position": 1, "title": "Don’t Dream It’s Over"}],
+        }), session)
+        session.add(FavoriteSongEntry(track_id=album.tracks[0].id, base_score=Decimal("8"), emotional_connection=Decimal("4"), replay_value=Decimal("4"), originality=Decimal("4"), final_score=Decimal("9")))
+        session.commit()
+
+        artist_names = {query: [artist.name for artist in list_artists(search=query, sort="name", page=1, page_size=10, session=session).items] for query in ["alvaro", "álvaro", "varo"]}
+        favorite_matches = {query: [entry.track_id for entry in list_favorite_songs(search=query, session=session)] for query in ["dont dream", "don't dream", "alvaro", "album de alvaro"]}
+        add_song_matches = [track.track_id for track in search_tracks("dont dream its", session=session)]
+
+    assert all(names == ["Álvaro Díaz"] for names in artist_names.values())
+    assert all(matches == [album.tracks[0].id] for matches in favorite_matches.values())
+    assert add_song_matches == [album.tracks[0].id]
 
 
 def test_artist_list_includes_primary_project_breakdown_and_average_only() -> None:
