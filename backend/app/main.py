@@ -464,7 +464,7 @@ def list_artists(
     elif scope == "featuring":
         filters.extend([album_count == 0, featured_track_count > 0])
     total = session.scalar(select(func.count(Artist.id)).where(*filters)) or 0
-    name_order = (func.lower(Artist.name), Artist.id)
+    name_order = (func.search_normalize(Artist.name), Artist.id)
     ordering = name_order if sort == "name" else (
         (average_rating.is_(None), average_rating.desc(), *name_order) if sort == "rating" else (album_count.desc(), *name_order)
     )

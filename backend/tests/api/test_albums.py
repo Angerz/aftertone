@@ -511,6 +511,21 @@ def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
     assert [artist.name for artist in inactive.items] == ["Aaron"]
 
 
+def test_artist_list_sorts_names_and_tie_breakers_without_diacritics() -> None:
+    with SessionLocal() as session:
+        for name in ["Álvaro", "Ariana", "Bravo", "Zoé"]:
+            album = create_album(AlbumCreate.model_validate({**album_payload(f"{name} album"), "artists": [{"name": name}]}), session)
+            session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("8")))
+        session.commit()
+        names = [artist.name for artist in list_artists(sort="name", session=session).items]
+        rating_ties = [artist.name for artist in list_artists(sort="rating", session=session).items]
+        project_ties = [artist.name for artist in list_artists(sort="projects", session=session).items]
+
+    assert names == ["Álvaro", "Ariana", "Bravo", "Zoé"]
+    assert rating_ties == names
+    assert project_ties == names
+
+
 def test_artist_list_primary_and_featuring_scopes_are_distinct() -> None:
     with SessionLocal() as session:
         create_album(AlbumCreate.model_validate({**album_payload("Primary album"), "artists": [{"name": "Primary artist"}]}), session)
