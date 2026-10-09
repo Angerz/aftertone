@@ -4,11 +4,13 @@ import { ArtistIndexRow } from "./ArtistPage";
 
 describe("ArtistIndexRow", () => {
   it("renders a lazy artist portrait, project breakdown, tiered average, and navigation control", () => {
-    const markup = renderToStaticMarkup(<ol><ArtistIndexRow artist={{ id: 1, name: "Fiona Apple", image_url: "/media/covers/fiona.webp", project_counts: { album: 2, mixtape: 1 }, average_rating: 7.9 }} onOpen={() => undefined} /></ol>);
+    const markup = renderToStaticMarkup(<ol><ArtistIndexRow artist={{ id: 1, name: "Björk", country_code: "IS", image_url: "/media/covers/fiona.webp", project_counts: { album: 2, mixtape: 1 }, average_rating: 7.9 }} onOpen={() => undefined} /></ol>);
     expect(markup).toContain('loading="lazy"');
     expect(markup).toContain("2 albums · 1 mixtape");
     expect(markup).toContain("rating-high");
-    expect(markup).toContain('aria-label="Expand Fiona Apple"');
+    expect(markup).toContain('aria-label="Expand Björk"');
+    expect(markup).toContain('class="artist-index-country-flag"');
+    expect(markup).toContain('aria-label="Iceland"');
   });
 
   it("uses the existing initials fallback and neutral Not rated state, including inactive status", () => {
@@ -18,6 +20,7 @@ describe("ArtistIndexRow", () => {
     expect(markup).toContain("No primary projects");
     expect(markup).toContain("Not rated");
     expect(markup).toContain("Inactive");
+    expect(markup).not.toContain("artist-index-country-flag");
   });
 
   it("renders only compact primary-project data in an expanded row", () => {

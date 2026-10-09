@@ -1,10 +1,10 @@
 import type { Artist } from "../../api/types";
 
-function countryName(code: string): string {
+export function artistCountryName(code: string): string {
   try { return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code; } catch { return code; }
 }
 
-function countryFlag(code: string): string {
+export function artistCountryFlag(code: string): string {
   return String.fromCodePoint(...code.toUpperCase().split("").map((letter) => 0x1f1a5 + letter.charCodeAt(0)));
 }
 
@@ -16,7 +16,7 @@ function ageAt(from: string, until: Date): number {
 }
 
 export function artistMetadata(artist: Pick<Artist, "artist_type" | "country_code" | "birth_date" | "death_date" | "formed_year" | "dissolved_year">, today = new Date()): string | null {
-  const parts = artist.country_code ? [`${countryFlag(artist.country_code)} ${countryName(artist.country_code)}`] : [];
+  const parts = artist.country_code ? [`${artistCountryFlag(artist.country_code)} ${artistCountryName(artist.country_code)}`] : [];
   if (artist.artist_type === "person" && artist.birth_date) {
     const birthYear = artist.birth_date.slice(0, 4);
     if (artist.death_date) parts.push(`${birthYear}–${artist.death_date.slice(0, 4)}`, `Age ${ageAt(artist.birth_date, new Date(`${artist.death_date}T00:00:00`))}`);

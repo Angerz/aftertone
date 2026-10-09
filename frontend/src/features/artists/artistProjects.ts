@@ -26,6 +26,18 @@ export interface ArtistProjectGroup {
   projects: ArtistAlbum[];
 }
 
+export interface AlbumListeningProgress {
+  total: number;
+  listened: number;
+  albums: ArtistAlbum[];
+}
+
+export interface ProjectTypeDistribution {
+  releaseType: ReleaseType;
+  label: string;
+  count: number;
+}
+
 export function averageProjectRating(projects: ArtistAlbum[]): number | null {
   const rated = projects.map((project) => project.rating).filter((rating): rating is number => rating !== null);
   return rated.length ? rated.reduce((total, rating) => total + rating, 0) / rated.length : null;
@@ -37,6 +49,18 @@ export function ratedProjectCount(projects: ArtistAlbum[]): number {
 
 export function summarizeArtistProjects(artist: Pick<ArtistDetail, "albums">): { average: number | null; ratedProjects: number } {
   return { average: averageProjectRating(artist.albums), ratedProjects: ratedProjectCount(artist.albums) };
+}
+
+export function albumListeningProgress(projects: ArtistAlbum[]): AlbumListeningProgress {
+  const albums = projects.filter((project) => project.release_type === "album");
+  return { albums, total: albums.length, listened: ratedProjectCount(albums) };
+}
+
+export function projectTypeDistribution(projects: ArtistAlbum[]): ProjectTypeDistribution[] {
+  return releaseTypeOrder.flatMap((releaseType) => {
+    const count = projects.filter((project) => project.release_type === releaseType).length;
+    return count ? [{ releaseType, label: releaseTypeLabels[releaseType], count }] : [];
+  });
 }
 
 export function formatProjectCounts(counts: Partial<Record<ReleaseType, number>>): string {

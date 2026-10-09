@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ArtistAlbum, ArtistDetail } from "../../api/types";
-import { averageProjectRating, formatProjectCounts, groupArtistProjects, ratedProjectCount, summarizeArtistProjects } from "./artistProjects";
+import { albumListeningProgress, averageProjectRating, formatProjectCounts, groupArtistProjects, projectTypeDistribution, ratedProjectCount, summarizeArtistProjects } from "./artistProjects";
 
 const project = (overrides: Partial<ArtistAlbum>): ArtistAlbum => ({ id: 1, title: "Project", year: 2020, release_type: "album", cover_url: null, artists: [], rating: null, ...overrides });
 
@@ -39,5 +39,17 @@ describe("artist projects", () => {
     expect(formatProjectCounts({ album: 4, ep: 1, mixtape: 1 })).toBe("4 albums · 1 EP · 1 mixtape");
     expect(formatProjectCounts({ live: 1 })).toBe("1 live project");
     expect(formatProjectCounts({})).toBe("No primary projects");
+  });
+
+  it("counts only rated primary albums as listened", () => {
+    const progress = albumListeningProgress([project({ rating: 8 }), project({ id: 2, rating: null }), project({ id: 3, release_type: "ep", rating: 9 })]);
+    expect(progress).toMatchObject({ total: 2, listened: 1 });
+  });
+
+  it("returns populated project types with their primary-project counts", () => {
+    expect(projectTypeDistribution([project({ release_type: "album" }), project({ id: 2, release_type: "album" }), project({ id: 3, release_type: "mixtape" })])).toEqual([
+      { releaseType: "album", label: "Albums", count: 2 }, { releaseType: "mixtape", label: "Mixtapes", count: 1 },
+    ]);
+    expect(projectTypeDistribution([])).toEqual([]);
   });
 });
