@@ -68,6 +68,7 @@ class Album(Base):
         Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]), default=ReleaseType.ALBUM
     )
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    release_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     disc_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     cover_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
     needs_revisit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")

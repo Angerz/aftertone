@@ -172,6 +172,7 @@ class MusicBrainzReleasePreview(APIModel):
     title: str
     artists: list[str]
     year: int | None = Field(default=None, ge=1000, le=3000)
+    release_date: date | None = None
     release_type: ReleaseType
     source_release_type: str | None = None
     disc_count: int = Field(ge=1, le=99)
@@ -184,10 +185,19 @@ class MusicBrainzImportRequest(APIModel):
     title: str = Field(min_length=1, max_length=300)
     artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
+    release_date: date | None = None
     release_type: ReleaseType = ReleaseType.ALBUM
     disc_count: int = Field(ge=1, le=99)
     tracks: list[MusicBrainzTrackPreview] = Field(min_length=1)
     cover_url: str | None = None
+
+    @model_validator(mode="after")
+    def synchronize_release_year(self) -> "MusicBrainzImportRequest":
+        if self.release_date is not None:
+            if self.year is not None and self.year != self.release_date.year:
+                raise ValueError("year must match release date")
+            self.year = self.release_date.year
+        return self
 
 
 class TrackCreditsUpdate(APIModel):
@@ -199,6 +209,7 @@ class AlbumCreate(APIModel):
     title: str = Field(min_length=1, max_length=300)
     artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
+    release_date: date | None = None
     release_type: ReleaseType = ReleaseType.ALBUM
     disc_count: int = Field(default=1, ge=1, le=99)
     tracks: list[TrackCreate] = Field(min_length=1)
@@ -213,6 +224,10 @@ class AlbumCreate(APIModel):
 
     @model_validator(mode="after")
     def validate_disc_tracks(self) -> "AlbumCreate":
+        if self.release_date is not None:
+            if self.year is not None and self.year != self.release_date.year:
+                raise ValueError("year must match release date")
+            self.year = self.release_date.year
         positions = [(track.disc_number, track.position) for track in self.tracks]
         if len(positions) != len(set(positions)):
             raise ValueError("track positions must be unique within each disc")
@@ -239,6 +254,7 @@ class AlbumUpdate(APIModel):
     title: str = Field(min_length=1, max_length=300)
     artists: list[ArtistCreditInput] = Field(min_length=1)
     year: int | None = Field(default=None, ge=1000, le=3000)
+    release_date: date | None = None
     release_type: ReleaseType
     disc_count: int = Field(default=1, ge=1, le=99)
     tracks: list[TrackUpdate] | None = Field(default=None, min_length=1)
@@ -254,6 +270,10 @@ class AlbumUpdate(APIModel):
 
     @model_validator(mode="after")
     def validate_disc_tracks(self) -> "AlbumUpdate":
+        if self.release_date is not None:
+            if self.year is not None and self.year != self.release_date.year:
+                raise ValueError("year must match release date")
+            self.year = self.release_date.year
         if self.tracks is not None and any(track.disc_number > self.disc_count for track in self.tracks):
             raise ValueError("track disc number must not exceed album disc count")
         return self
@@ -357,6 +377,7 @@ class AlbumResponse(APIModel):
     musicbrainz_release_id: str | None = None
     artists: list[ArtistResponse]
     year: int | None
+    release_date: date | None = None
     release_type: ReleaseType
     disc_count: int
     created_at: datetime
@@ -485,9 +506,18 @@ class RatingRevisionSummaryResponse(APIModel):
     final_rating: Decimal | None
 
 
+class RatingBreakdownResponse(APIModel):
+    pre_contribution: Decimal | None
+    coherence_contribution: Decimal | None
+    bad_experience_contribution: Decimal | None
+    emotion_contribution: Decimal | None
+    final_rating: Decimal | None
+
+
 class RatingRevisionResponse(RatingRevisionSummaryResponse):
     album_id: int
     coherence_notes: str | None
     emotion_notes: str | None
     album_notes: str | None
+    rating_breakdown: RatingBreakdownResponse
     tracks: list[TrackRatingRevisionResponse]

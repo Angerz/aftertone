@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.ratings.calculator import TrackScore, calculate_rating
+from app.ratings.calculator import TrackScore, calculate_rating, calculate_rating_breakdown
 
 
 def score(value: str, included: bool = True) -> TrackScore:
@@ -62,3 +62,13 @@ def test_known_grace_formula() -> None:
 def test_known_tpab_formula() -> None:
     result = calculate_rating([score("9.8625")], coherence=Decimal("10"), emotion=Decimal("8.5"))
     assert result.final_rating == pytest.approx(Decimal("10.2"))
+
+
+def test_breakdown_uses_the_authoritative_formula_and_sums_to_final_rating() -> None:
+    result = calculate_rating([score("9.709")], coherence=Decimal("0"), emotion=Decimal("8"))
+    breakdown = calculate_rating_breakdown(pre_rating=result.pre_rating, bad_experience=result.bad_experience, coherence=Decimal("0"), emotion=Decimal("8"))
+    assert breakdown.pre_contribution == Decimal("9.709")
+    assert breakdown.coherence_contribution == Decimal("0")
+    assert breakdown.bad_experience_contribution == Decimal("0")
+    assert breakdown.emotion_contribution == Decimal("0.075")
+    assert breakdown.final_rating == result.final_rating == Decimal("9.784")

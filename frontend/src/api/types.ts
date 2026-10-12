@@ -15,13 +15,13 @@ export interface FavoriteSongTrackSearch { track_id: number; track_title: string
 export interface LatestRevision { id: number; created_at: string; pre_rating: number | null; final_rating: number | null }
 export interface LatestLegacyRating { id: number; imported_at: string; legacy_final_rating: number | null; computed_final_rating: number | null; reconciliation_status: string }
 export interface Album {
-  id: number; title: string; musicbrainz_release_id?: string | null; artists: Artist[]; year: number | null;
+  id: number; title: string; musicbrainz_release_id?: string | null; artists: Artist[]; year: number | null; release_date?: string | null;
   release_type: ReleaseType; disc_count: number; created_at: string; tracks: Track[]; latest_revision: LatestRevision | null; cover_url: string | null; needs_revisit: boolean; revisit_reason: string | null; revisit_marked_at: string | null; latest_legacy_rating: LatestLegacyRating | null;
 }
 export interface TrackCreate { disc_number: number; position: number; title: string }
-export interface AlbumCreate { title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType; disc_count: number; tracks: TrackCreate[] }
+export interface AlbumCreate { title: string; artists: ArtistCreditInput[]; year: number | null; release_date?: string | null; release_type: ReleaseType; disc_count: number; tracks: TrackCreate[] }
 export interface TrackUpdate { id?: number; disc_number: number; title: string }
-export interface AlbumUpdate { title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType; disc_count: number; tracks?: TrackUpdate[]; musicbrainz_release_id?: string | null }
+export interface AlbumUpdate { title: string; artists: ArtistCreditInput[]; year: number | null; release_date?: string | null; release_type: ReleaseType; disc_count: number; tracks?: TrackUpdate[]; musicbrainz_release_id?: string | null }
 export interface TrackCreditsUpdate { primary_artist_ids: number[]; featured_artist_ids: number[] }
 export interface TrackRatingRevision { track_id: number; title: string; disc_number: number; position: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
 export interface TrackRatingRevisionCreate { track_id: number; score: number | null; include_in_pre_rating: boolean; notes: string | null }
@@ -29,8 +29,10 @@ export interface RatingRevisionDetail {
   id: number; album_id: number; created_at: string; pre_rating: number | null;
   coherence: number; coherence_notes: string | null; emotion: number; emotion_notes: string | null;
   album_notes: string | null; bad_experience: number | null; final_rating: number | null;
+  rating_breakdown: RatingBreakdown;
   tracks: TrackRatingRevision[];
 }
+export interface RatingBreakdown { pre_contribution: number | null; coherence_contribution: number | null; bad_experience_contribution: number | null; emotion_contribution: number | null; final_rating: number | null }
 export interface RatingRevisionSummary { id: number; created_at: string; pre_rating: number | null; coherence: number; emotion: number; bad_experience: number | null; final_rating: number | null }
 export interface RatingRevisionCreate { coherence: number; coherence_notes: string | null; emotion: number; emotion_notes: string | null; album_notes: string | null; tracks: TrackRatingRevisionCreate[] }
 export interface LegacyImportRow { row_number: number; title: string | null; artist: string | null; legacy_final_rating: number | null; legacy_pre_rating: number | null; legacy_bad_experience: number | null; computed_pre_rating: number | null; computed_bad_experience: number | null; computed_final_rating: number | null; pre_formula: string | null; extracted_score_count: number; status: "ready" | "unrated" | "warning" | "error"; warnings: string[]; errors: string[] }
@@ -41,5 +43,5 @@ export interface AlbumFacets { decades: Record<string, number[]> }
 export interface AlbumRatingSummary { average: number | null; rated_count: number }
 export interface MusicBrainzSearchResult { musicbrainz_release_id: string; musicbrainz_release_group_id: string | null; title: string; artists: string[]; date: string | null; year: number | null; country: string | null; release_type: string | null; disc_count: number; track_count: number; disambiguation: string | null }
 export interface MusicBrainzTrackPreview { disc_number: number; position: number; title: string; primary_artists: string[] }
-export interface MusicBrainzReleasePreview { musicbrainz_release_id: string; title: string; artists: string[]; year: number | null; release_type: ReleaseType; source_release_type: string | null; disc_count: number; tracks: MusicBrainzTrackPreview[]; cover_url: string | null }
-export interface MusicBrainzImport { musicbrainz_release_id: string; title: string; artists: ArtistCreditInput[]; year: number | null; release_type: ReleaseType; disc_count: number; tracks: MusicBrainzTrackPreview[]; cover_url: string | null }
+export interface MusicBrainzReleasePreview { musicbrainz_release_id: string; title: string; artists: string[]; year: number | null; release_date?: string | null; release_type: ReleaseType; source_release_type: string | null; disc_count: number; tracks: MusicBrainzTrackPreview[]; cover_url: string | null }
+export interface MusicBrainzImport { musicbrainz_release_id: string; title: string; artists: ArtistCreditInput[]; year: number | null; release_date?: string | null; release_type: ReleaseType; disc_count: number; tracks: MusicBrainzTrackPreview[]; cover_url: string | null }

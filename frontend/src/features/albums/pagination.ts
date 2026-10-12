@@ -1,7 +1,7 @@
 import type { AlbumListParams } from "../../api/albums";
 import { defaultLibrarySortDirection, type LibrarySort, type LibrarySortDirection } from "./library";
 
-export type LibraryNavigation = Required<Pick<AlbumListParams, "page" | "sort" | "direction" | "revisit" | "unrated">> & Pick<AlbumListParams, "search" | "year" | "decade">;
+export type LibraryNavigation = Required<Pick<AlbumListParams, "page" | "sort" | "direction" | "revisit" | "unrated">> & Pick<AlbumListParams, "search" | "year" | "month" | "decade">;
 
 export function getDecadeForYear(year: number): number { return Math.floor(year / 10) * 10; }
 export function parseLibraryNavigation(params = new URLSearchParams(window.location.search)): LibraryNavigation {
@@ -10,7 +10,8 @@ export function parseLibraryNavigation(params = new URLSearchParams(window.locat
   const sort = params.get("sort"); const permitted: LibrarySort[] = ["rating", "recent", "year", "artist", "title"];
   const resolvedSort = permitted.includes(sort as LibrarySort) ? sort as LibrarySort : "rating";
   const rawDirection = params.get("direction"); const direction: LibrarySortDirection = rawDirection === "asc" || rawDirection === "desc" ? rawDirection : defaultLibrarySortDirection(resolvedSort);
-  return { page: number("page") ?? 1, search: params.get("search") || undefined, decade: number("decade"), year: number("year"), revisit: enabled("revisit"), unrated: enabled("unrated"), sort: resolvedSort, direction };
+  const year = number("year"); const rawMonth = number("month"); const month = year !== undefined && rawMonth !== undefined && rawMonth <= 12 ? rawMonth : undefined;
+  return { page: number("page") ?? 1, search: params.get("search") || undefined, decade: number("decade"), year, month, revisit: enabled("revisit"), unrated: enabled("unrated"), sort: resolvedSort, direction };
 }
 export function buildAlbumQueryParams(navigation: LibraryNavigation): URLSearchParams {
   const params = new URLSearchParams();
@@ -18,6 +19,7 @@ export function buildAlbumQueryParams(navigation: LibraryNavigation): URLSearchP
   if (navigation.search) params.set("search", navigation.search);
   if (navigation.decade) params.set("decade", String(navigation.decade));
   if (navigation.year) params.set("year", String(navigation.year));
+  if (navigation.year && navigation.month) params.set("month", String(navigation.month));
   if (navigation.revisit) params.set("revisit", "1");
   if (navigation.unrated) params.set("unrated", "1");
   if (navigation.sort !== "rating") params.set("sort", navigation.sort);

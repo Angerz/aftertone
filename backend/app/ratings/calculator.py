@@ -24,6 +24,15 @@ class RatingResult:
     final_rating: Decimal | None
 
 
+@dataclass(frozen=True)
+class RatingBreakdown:
+    pre_contribution: Decimal | None
+    coherence_contribution: Decimal | None
+    bad_experience_contribution: Decimal | None
+    emotion_contribution: Decimal | None
+    final_rating: Decimal | None
+
+
 def _validate_score(score: Decimal, name: str) -> None:
     if not ZERO <= score <= TEN:
         raise ValueError(f"{name} must be between 0 and 10")
@@ -51,12 +60,21 @@ def calculate_rating(
         for score in included
     )
     bad_experience = bad_points / Decimal(len(included))
-    coherence_component = ((coherence / TEN) ** 2) * Decimal("0.25")
-    emotion_component = ((emotion - FIVE) / Decimal("100") * Decimal("2.5"))
+    breakdown = calculate_rating_breakdown(pre_rating=pre_rating, bad_experience=bad_experience, coherence=coherence, emotion=emotion)
+    return RatingResult(pre_rating, bad_experience, breakdown.emotion_contribution, breakdown.final_rating)
+
+
+def calculate_rating_breakdown(*, pre_rating: Decimal | None, bad_experience: Decimal | None, coherence: Decimal, emotion: Decimal) -> RatingBreakdown:
+    """Return the exact formula terms used to produce an already-snapshotted rating."""
+    if pre_rating is None or bad_experience is None:
+        return RatingBreakdown(None, None, None, None, None)
+    coherence_contribution = ((coherence / TEN) ** 2) * Decimal("0.25")
+    bad_experience_contribution = -Decimal("0.5") * (bad_experience**2)
+    emotion_contribution = ((emotion - FIVE) / Decimal("100") * Decimal("2.5"))
     if emotion > FIVE:
-        emotion_component *= ONE_MINUS(bad_experience)
-    final_rating = pre_rating + coherence_component - Decimal("0.5") * (bad_experience**2) + emotion_component
-    return RatingResult(pre_rating, bad_experience, emotion_component, final_rating)
+        emotion_contribution *= ONE_MINUS(bad_experience)
+    final_rating = pre_rating + coherence_contribution + bad_experience_contribution + emotion_contribution
+    return RatingBreakdown(pre_rating, coherence_contribution, bad_experience_contribution, emotion_contribution, final_rating)
 
 
 def ONE_MINUS(value: Decimal) -> Decimal:

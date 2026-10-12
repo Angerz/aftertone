@@ -45,7 +45,7 @@ from app.schemas.music import (
     MusicBrainzSearchResult,
     LatestRevisionResponse,
     PaginatedResponse,
-    RatingRevisionCreate,
+    RatingRevisionCreate, RatingBreakdownResponse,
     RatingRevisionResponse,
     RatingRevisionSummaryResponse,
     RevisitUpdate,
@@ -58,6 +58,7 @@ from app.services.rating_revisions import RevisionTracksError, create_rating_rev
 from app.services.covers import CoverError, download_cover_from_url, remove_cover_file, save_cover
 from app.services.artists import artist_ids_from_inputs, get_or_create_artist, normalize_artist_name, set_album_artists, set_track_artists
 from app.services.search import normalize_search_text
+from app.ratings.calculator import calculate_rating_breakdown
 from app.integrations.musicbrainz import MusicBrainzError, release_preview, search_releases
 from decimal import Decimal
 
@@ -91,7 +92,7 @@ def album_response(album: Album, latest_revision: RatingRevision | None = None, 
         featured = [ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in track_credits if credit.role == TrackArtistRole.FEATURED]
         return TrackResponse(id=track.id, disc_number=track.disc_number, position=track.position, title=track.title, primary_artists=primary, featured_artists=featured, uses_album_artists=not explicit_primary)
     return AlbumResponse(
-        id=album.id, title=album.title, musicbrainz_release_id=album.musicbrainz_release_id, artists=artists, year=album.release_year,
+        id=album.id, title=album.title, musicbrainz_release_id=album.musicbrainz_release_id, artists=artists, year=album.release_year, release_date=album.release_date,
         release_type=album.release_type, disc_count=album.disc_count, created_at=album.created_at,
         tracks=[track_response(track) for track in sorted(album.tracks, key=lambda track: (track.disc_number, track.position))],
         latest_revision=LatestRevisionResponse(
@@ -119,11 +120,13 @@ def effective_album_rating(album: Album) -> Decimal | None:
 
 
 def revision_response(revision: RatingRevision) -> RatingRevisionResponse:
+    breakdown = calculate_rating_breakdown(pre_rating=revision.pre_rating, bad_experience=revision.bad_experience, coherence=revision.coherence, emotion=revision.emotion)
     return RatingRevisionResponse(
         id=revision.id, album_id=revision.album_id, created_at=revision.created_at,
         coherence=revision.coherence, coherence_notes=revision.coherence_notes,
         emotion=revision.emotion, emotion_notes=revision.emotion_notes, album_notes=revision.album_notes,
         pre_rating=revision.pre_rating, bad_experience=revision.bad_experience, final_rating=revision.final_rating,
+        rating_breakdown=RatingBreakdownResponse(**breakdown.__dict__),
         tracks=[
             TrackRatingRevisionResponse(
                 track_id=track.track_id, title=track.track_title, disc_number=track.disc_number, position=track.track_position,
@@ -142,7 +145,7 @@ def health() -> dict[str, str]:
 @app.post("/api/albums", response_model=AlbumResponse, status_code=status.HTTP_201_CREATED, tags=["albums"])
 def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) -> AlbumResponse:
     album = Album(
-        title=payload.title, release_year=payload.year, release_type=payload.release_type, disc_count=payload.disc_count,
+        title=payload.title, release_year=payload.year, release_date=payload.release_date, release_type=payload.release_type, disc_count=payload.disc_count,
         tracks=[Track(disc_number=track.disc_number, position=track.position, title=track.title) for track in payload.tracks],
     )
     try:
@@ -183,7 +186,7 @@ def import_musicbrainz_release(payload: MusicBrainzImportRequest, session: Sessi
         raise HTTPException(status_code=422, detail="MusicBrainz tracks must have unique positions within each disc.")
     if any(track.disc_number > payload.disc_count for track in tracks):
         raise HTTPException(status_code=422, detail="MusicBrainz track disc exceeds the album disc count.")
-    album = Album(title=payload.title, musicbrainz_release_id=payload.musicbrainz_release_id, release_year=payload.year, release_type=payload.release_type, disc_count=payload.disc_count, tracks=tracks)
+    album = Album(title=payload.title, musicbrainz_release_id=payload.musicbrainz_release_id, release_year=payload.year, release_date=payload.release_date, release_type=payload.release_type, disc_count=payload.disc_count, tracks=tracks)
     cover_filename = None
     try:
         session.add(album)
@@ -211,12 +214,14 @@ def import_musicbrainz_release(payload: MusicBrainzImportRequest, session: Sessi
     return album_response(album)
 
 
-def album_filters(year: int | None, decade: int | None, search: str | None):
+def album_filters(year: int | None, decade: int | None, search: str | None, month: int | None = None):
     filters = []
     if year is not None:
         filters.append(Album.release_year == year)
     if decade is not None:
         filters.extend([Album.release_year >= decade, Album.release_year <= decade + 9])
+    if month is not None:
+        filters.append(func.extract("month", Album.release_date) == month)
     if search and (term := search.strip()):
         pattern = f"%{term.casefold()}%"
         artist_match = select(AlbumArtist.id).join(Artist).where(
@@ -250,12 +255,14 @@ def effective_rating_value():
 @app.get("/api/albums", response_model=PaginatedResponse[AlbumResponse], tags=["albums"])
 def list_albums(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 25,
-    year: Annotated[int | None, Query(ge=1000, le=3000)] = None, decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+    year: Annotated[int | None, Query(ge=1000, le=3000)] = None, decade: Annotated[int | None, Query(ge=1000, le=3000)] = None, month: Annotated[int | None, Query(ge=1, le=12)] = None,
     search: str | None = None, revisit: bool = False, unrated: bool = False, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating", direction: Literal["asc", "desc"] | None = None,
     session: Session = Depends(get_session),
 ) -> PaginatedResponse[AlbumResponse]:
+    if month is not None and year is None:
+        raise HTTPException(status_code=422, detail="month filter requires year")
     latest_revision_id, latest_legacy_id = latest_rating_ids()
-    filters = album_filters(year, decade, search)
+    filters = album_filters(year, decade, search, month)
     rating_value = effective_rating_value()
     if revisit:
         filters.append(Album.needs_revisit.is_(True))
@@ -277,7 +284,7 @@ def list_albums(
     ordering = {
         "rating": (rating_value.is_(None).asc(), ordered(rating_value), normalized_title.asc(), Album.id.asc()),
         "recent": (rating_value.is_(None).asc(), ordered(recent_value).nullslast(), normalized_title.asc(), Album.id.asc()),
-        "year": (ordered(Album.release_year).nullslast(), normalized_title.asc(), Album.id.asc()),
+        "year": (ordered(Album.release_year).nullslast(), ordered(Album.release_date).nullslast(), normalized_title.asc(), Album.id.asc()),
         "artist": (normalized_artist.is_(None).asc(), ordered(normalized_artist), normalized_title.asc(), Album.id.asc()),
         "title": (ordered(normalized_title), Album.id.asc()),
     }[sort]
@@ -306,13 +313,16 @@ def list_albums(
 def album_rating_summary(
     year: Annotated[int | None, Query(ge=1000, le=3000)] = None,
     decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
     revisit: bool = False,
     unrated: bool = False,
     session: Session = Depends(get_session),
 ) -> AlbumRatingSummaryResponse:
+    if month is not None and year is None:
+        raise HTTPException(status_code=422, detail="month filter requires year")
     latest_revision_id, latest_legacy_id = latest_rating_ids()
     effective_rating = effective_rating_value()
-    filters = album_filters(year, decade, None)
+    filters = album_filters(year, decade, None, month)
     if revisit:
         filters.append(Album.needs_revisit.is_(True))
     if unrated:
@@ -359,6 +369,7 @@ def update_album(album_id: int, payload: AlbumUpdate, session: Session = Depends
             raise HTTPException(status_code=409, detail="This MusicBrainz release is already linked to another album.")
     album.title = payload.title
     album.release_year = payload.year
+    album.release_date = payload.release_date
     album.release_type = payload.release_type
     if payload.musicbrainz_release_id:
         album.musicbrainz_release_id = payload.musicbrainz_release_id

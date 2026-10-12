@@ -395,6 +395,29 @@ def test_library_sorting_supports_both_directions_before_pagination_and_normaliz
     assert [item.title for item in second_page.items] == ["Álbum", "Unrated"]
 
 
+def test_optional_release_date_preserves_year_only_records_and_filters_months() -> None:
+    with SessionLocal() as session:
+        year_only = create_album(AlbumCreate.model_validate({**album_payload("Year only"), "year": 2026}), session)
+        february = create_album(AlbumCreate.model_validate({**album_payload("February"), "year": 2026, "release_date": "2026-02-27"}), session)
+        march = create_album(AlbumCreate.model_validate({**album_payload("March"), "year": 2026, "release_date": "2026-03-01"}), session)
+        session.commit()
+        february_rows = list_albums(year=2026, month=2, sort="year", direction="asc", session=session)
+        chronological = list_albums(year=2026, sort="year", direction="asc", session=session)
+
+        update_payload = {"title": "Year only", "artists": [{"name": "Jeff Buckley"}], "year": 2026, "release_type": "album", "disc_count": 1}
+        update_album(year_only.id, AlbumUpdate.model_validate({**update_payload, "release_date": "2026-01-02"}), session)
+        updated = update_album(year_only.id, AlbumUpdate.model_validate({**update_payload, "release_date": None}), session)
+
+    assert february.year == 2026 and february.release_date.isoformat() == "2026-02-27"
+    assert [item.title for item in february_rows.items] == ["February"]
+    assert [item.title for item in chronological.items] == ["February", "March", "Year only"]
+    assert updated.year == 2026 and updated.release_date is None
+    with pytest.raises(ValidationError, match="year must match release date"):
+        AlbumCreate.model_validate({**album_payload("Invalid"), "year": 2025, "release_date": "2026-02-27"})
+    with pytest.raises(ValidationError):
+        AlbumCreate.model_validate({**album_payload("Invalid calendar"), "release_date": "2026-02-30"})
+
+
 def test_library_status_filters_use_current_revisit_and_effective_rating_before_pagination() -> None:
     with SessionLocal() as session:
         revisit_native = create_album(AlbumCreate.model_validate({**album_payload("Revisit native"), "year": 2020}), session)

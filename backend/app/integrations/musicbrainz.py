@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from datetime import date
 from typing import Any
 
 import httpx
@@ -77,6 +78,16 @@ def _year(date: str | None) -> int | None:
     return None
 
 
+def _release_date(value: str | None) -> date | None:
+    """Only accept a complete MusicBrainz calendar date; never invent month or day."""
+    if value is None or len(value) != 10:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def map_release_type(primary_type: str | None, secondary_types: list[str] | None = None) -> ReleaseType:
     primary = (primary_type or "").casefold()
     secondary = {item.casefold() for item in secondary_types or []}
@@ -137,7 +148,7 @@ def release_preview(release_id: str, client: httpx.Client | None = None) -> dict
         raise MusicBrainzError("This MusicBrainz release has no importable audio tracks.", status_code=422)
     return {
         "musicbrainz_release_id": payload["id"], "title": payload.get("title", "Untitled"),
-        "artists": album_artists, "year": _year(payload.get("date")),
+        "artists": album_artists, "year": _year(payload.get("date")), "release_date": _release_date(payload.get("date")),
         "release_type": map_release_type(group.get("primary-type"), group.get("secondary-types")),
         "source_release_type": group.get("primary-type"), "disc_count": len(media), "tracks": tracks,
         "cover_url": f"https://coverartarchive.org/release/{payload['id']}/front",

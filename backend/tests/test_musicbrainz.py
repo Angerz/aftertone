@@ -33,7 +33,15 @@ def test_search_and_multi_disc_preview_are_normalized(monkeypatch) -> None:
     preview = musicbrainz.release_preview("release-id", Client(payload))
     assert preview["release_type"] == ReleaseType.EP
     assert preview["disc_count"] == 2
+    assert preview["release_date"] is None
     assert [(track["disc_number"], track["position"], track["title"]) for track in preview["tracks"]] == [(1, 1, "One"), (1, 2, "Two"), (2, 1, "Three")]
+
+
+def test_release_preview_keeps_only_complete_musicbrainz_dates() -> None:
+    payload = {"id": "release-id", "title": "Single", "date": "2000-02-27", "artist-credit": [{"name": "Artist"}], "release-group": {"primary-type": "Album"}, "media": [{"format": "CD", "tracks": [{"position": 1, "title": "One"}]}]}
+    preview = musicbrainz.release_preview("release-id", Client(payload))
+    assert preview["year"] == 2000
+    assert preview["release_date"].isoformat() == "2000-02-27"
 
 
 def test_search_retries_one_temporary_musicbrainz_failure(monkeypatch) -> None:
