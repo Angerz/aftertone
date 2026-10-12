@@ -251,7 +251,7 @@ def effective_rating_value():
 def list_albums(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 25,
     year: Annotated[int | None, Query(ge=1000, le=3000)] = None, decade: Annotated[int | None, Query(ge=1000, le=3000)] = None,
-    search: str | None = None, revisit: bool = False, unrated: bool = False, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating",
+    search: str | None = None, revisit: bool = False, unrated: bool = False, sort: Annotated[str, Query(pattern="^(rating|recent|year|artist|title)$")] = "rating", direction: Literal["asc", "desc"] | None = None,
     session: Session = Depends(get_session),
 ) -> PaginatedResponse[AlbumResponse]:
     latest_revision_id, latest_legacy_id = latest_rating_ids()
@@ -267,14 +267,19 @@ def list_albums(
         .outerjoin(LegacyRating, LegacyRating.id == latest_legacy_id)
         .where(*filters)
     ) or 0
+    default_direction = "asc" if sort in {"artist", "title"} else "desc"
+    direction = direction or default_direction
+    ordered = lambda value: value.asc() if direction == "asc" else value.desc()
     recent_value = func.coalesce(RatingRevision.created_at, LegacyRating.imported_at)
     first_artist_name = select(Artist.name).join(AlbumArtist).where(AlbumArtist.album_id == Album.id).order_by(AlbumArtist.position).limit(1).scalar_subquery()
+    normalized_title = func.search_normalize(Album.title)
+    normalized_artist = func.search_normalize(first_artist_name)
     ordering = {
-        "rating": (rating_value.desc().nullslast(), Album.title.asc(), Album.id.asc()),
-        "recent": (recent_value.desc().nullslast(), Album.title.asc(), Album.id.asc()),
-        "year": (Album.release_year.desc().nullslast(), Album.title.asc(), Album.id.asc()),
-        "artist": (func.lower(first_artist_name).asc(), Album.title.asc(), Album.id.asc()),
-        "title": (func.lower(Album.title).asc(), Album.id.asc()),
+        "rating": (rating_value.is_(None).asc(), ordered(rating_value), normalized_title.asc(), Album.id.asc()),
+        "recent": (rating_value.is_(None).asc(), ordered(recent_value).nullslast(), normalized_title.asc(), Album.id.asc()),
+        "year": (ordered(Album.release_year).nullslast(), normalized_title.asc(), Album.id.asc()),
+        "artist": (normalized_artist.is_(None).asc(), ordered(normalized_artist), normalized_title.asc(), Album.id.asc()),
+        "title": (ordered(normalized_title), Album.id.asc()),
     }[sort]
     rows = session.execute(
         select(Album, RatingRevision, LegacyRating)

@@ -4,7 +4,7 @@ import os
 import shutil
 import tempfile
 from io import BytesIO
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -356,6 +356,43 @@ def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
     assert [item.title for item in artist_search.items] == ["First"]
     assert empty.items == [] and empty.page == 99
     assert facets.decades == {2010: [2019], 2020: [2020, 2024, 2029], 2030: [2030]}
+
+
+def test_library_sorting_supports_both_directions_before_pagination_and_normalizes_text() -> None:
+    with SessionLocal() as session:
+        def project(title: str, artist: str, year: int | None, score: str | None, rated_at: datetime | None = None):
+            album = create_album(AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}], "year": year}), session)
+            if score is not None:
+                session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal(score), created_at=rated_at))
+            return album
+
+        project("Zoé", "Zoé", 2024, "5", datetime(2025, 1, 1, tzinfo=timezone.utc))
+        project("Bravo", "Bravo", 2022, "9", datetime(2026, 1, 1, tzinfo=timezone.utc))
+        project("Álbum", "Álvaro", 2020, None)
+        project("Unrated", "Unrated", None, None)
+        session.commit()
+
+        rating_desc = list_albums(sort="rating", direction="desc", session=session)
+        rating_asc = list_albums(sort="rating", direction="asc", session=session)
+        date_desc = list_albums(sort="recent", direction="desc", session=session)
+        date_asc = list_albums(sort="recent", direction="asc", session=session)
+        year_asc = list_albums(sort="year", direction="asc", session=session)
+        artists_asc = list_albums(sort="artist", direction="asc", session=session)
+        artists_desc = list_albums(sort="artist", direction="desc", session=session)
+        titles_asc = list_albums(sort="title", direction="asc", session=session)
+        titles_desc = list_albums(sort="title", direction="desc", session=session)
+        second_page = list_albums(sort="rating", direction="desc", page=2, page_size=2, session=session)
+
+    assert [item.title for item in rating_desc.items] == ["Bravo", "Zoé", "Álbum", "Unrated"]
+    assert [item.title for item in rating_asc.items] == ["Zoé", "Bravo", "Álbum", "Unrated"]
+    assert [item.title for item in date_desc.items] == ["Bravo", "Zoé", "Álbum", "Unrated"]
+    assert [item.title for item in date_asc.items] == ["Zoé", "Bravo", "Álbum", "Unrated"]
+    assert [item.title for item in year_asc.items] == ["Álbum", "Bravo", "Zoé", "Unrated"]
+    assert [item.artists[0].name for item in artists_asc.items] == ["Álvaro", "Bravo", "Unrated", "Zoé"]
+    assert [item.artists[0].name for item in artists_desc.items] == ["Zoé", "Unrated", "Bravo", "Álvaro"]
+    assert [item.title for item in titles_asc.items] == ["Álbum", "Bravo", "Unrated", "Zoé"]
+    assert [item.title for item in titles_desc.items] == ["Zoé", "Unrated", "Bravo", "Álbum"]
+    assert [item.title for item in second_page.items] == ["Álbum", "Unrated"]
 
 
 def test_library_status_filters_use_current_revisit_and_effective_rating_before_pagination() -> None:

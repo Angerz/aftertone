@@ -7,4 +7,8 @@ describe("Aftertone history markers", () => {
     expect(hasInternalBack(initialAftertoneState(null))).toBe(false);
   });
   it("marks normal navigation as safe to return internally", () => expect(hasInternalBack(nextAftertoneState({ aftertone: true }))).toBe(true));
+  it("preserves the original return context when an editor route is replaced", () => {
+    const origin = nextAftertoneState(initialAftertoneState(null));
+    expect(initialAftertoneState(origin)).toEqual({ aftertone: true, internalBack: true });
+  });
 });

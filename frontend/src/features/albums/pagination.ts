@@ -1,14 +1,16 @@
 import type { AlbumListParams } from "../../api/albums";
-import type { LibrarySort } from "./library";
+import { defaultLibrarySortDirection, type LibrarySort, type LibrarySortDirection } from "./library";
 
-export type LibraryNavigation = Required<Pick<AlbumListParams, "page" | "sort" | "revisit" | "unrated">> & Pick<AlbumListParams, "search" | "year" | "decade">;
+export type LibraryNavigation = Required<Pick<AlbumListParams, "page" | "sort" | "direction" | "revisit" | "unrated">> & Pick<AlbumListParams, "search" | "year" | "decade">;
 
 export function getDecadeForYear(year: number): number { return Math.floor(year / 10) * 10; }
 export function parseLibraryNavigation(params = new URLSearchParams(window.location.search)): LibraryNavigation {
   const number = (key: string) => { const value = Number(params.get(key)); return Number.isInteger(value) && value > 0 ? value : undefined; };
   const enabled = (key: string) => ["1", "true"].includes(params.get(key)?.toLowerCase() ?? "");
   const sort = params.get("sort"); const permitted: LibrarySort[] = ["rating", "recent", "year", "artist", "title"];
-  return { page: number("page") ?? 1, search: params.get("search") || undefined, decade: number("decade"), year: number("year"), revisit: enabled("revisit"), unrated: enabled("unrated"), sort: permitted.includes(sort as LibrarySort) ? sort as LibrarySort : "rating" };
+  const resolvedSort = permitted.includes(sort as LibrarySort) ? sort as LibrarySort : "rating";
+  const rawDirection = params.get("direction"); const direction: LibrarySortDirection = rawDirection === "asc" || rawDirection === "desc" ? rawDirection : defaultLibrarySortDirection(resolvedSort);
+  return { page: number("page") ?? 1, search: params.get("search") || undefined, decade: number("decade"), year: number("year"), revisit: enabled("revisit"), unrated: enabled("unrated"), sort: resolvedSort, direction };
 }
 export function buildAlbumQueryParams(navigation: LibraryNavigation): URLSearchParams {
   const params = new URLSearchParams();
@@ -19,5 +21,6 @@ export function buildAlbumQueryParams(navigation: LibraryNavigation): URLSearchP
   if (navigation.revisit) params.set("revisit", "1");
   if (navigation.unrated) params.set("unrated", "1");
   if (navigation.sort !== "rating") params.set("sort", navigation.sort);
+  if (navigation.direction !== defaultLibrarySortDirection(navigation.sort)) params.set("direction", navigation.direction);
   return params;
 }

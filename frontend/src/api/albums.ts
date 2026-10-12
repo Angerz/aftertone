@@ -1,6 +1,6 @@
 import { request } from "./client";
 import type { Album, AlbumCreate, AlbumFacets, AlbumRatingSummary, AlbumUpdate, PaginatedResponse, Track, TrackCreditsUpdate } from "./types";
-export interface AlbumListParams { page?: number; page_size?: number; year?: number; decade?: number; search?: string; revisit?: boolean; unrated?: boolean; sort?: "rating" | "recent" | "year" | "artist" | "title" }
+export interface AlbumListParams { page?: number; page_size?: number; year?: number; decade?: number; search?: string; revisit?: boolean; unrated?: boolean; sort?: "rating" | "recent" | "year" | "artist" | "title"; direction?: "asc" | "desc" }
 export const listAlbums = (params: AlbumListParams = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== "") query.set(key, String(value)); }); return request<PaginatedResponse<Album>>(`/api/albums${query.size ? `?${query}` : ""}`); };
 export const getAlbumFacets = () => request<AlbumFacets>("/api/albums/facets");
 export const getAlbumRatingSummary = (params: Pick<AlbumListParams, "year" | "decade" | "revisit" | "unrated"> = {}) => { const query = new URLSearchParams(); if (params.year !== undefined) query.set("year", String(params.year)); if (params.decade !== undefined) query.set("decade", String(params.decade)); if (params.revisit) query.set("revisit", "true"); if (params.unrated) query.set("unrated", "true"); return request<AlbumRatingSummary>(`/api/albums/summary${query.size ? `?${query}` : ""}`); };

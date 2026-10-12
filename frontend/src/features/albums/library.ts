@@ -2,6 +2,11 @@ import type { Album } from "../../api/types";
 import { formatArtistNames } from "../artists/artistDisplay";
 
 export type LibrarySort = "rating" | "year" | "artist" | "title" | "recent";
+export type LibrarySortDirection = "asc" | "desc";
+
+export function defaultLibrarySortDirection(sort: LibrarySort): LibrarySortDirection {
+  return sort === "artist" || sort === "title" ? "asc" : "desc";
+}
 
 export function formatLibraryRating(value: number): string {
   const rounded = Math.min(10, Math.round(value * 10) / 10);
