@@ -26,10 +26,10 @@ export interface ArtistProjectGroup {
   projects: ArtistAlbum[];
 }
 
-export interface AlbumListeningProgress {
+export interface ProjectRatingProgress {
   total: number;
-  listened: number;
-  albums: ArtistAlbum[];
+  rated: number;
+  projects: ArtistAlbum[];
 }
 
 export interface ProjectTypeDistribution {
@@ -51,9 +51,8 @@ export function summarizeArtistProjects(artist: Pick<ArtistDetail, "albums">): {
   return { average: averageProjectRating(artist.albums), ratedProjects: ratedProjectCount(artist.albums) };
 }
 
-export function albumListeningProgress(projects: ArtistAlbum[]): AlbumListeningProgress {
-  const albums = projects.filter((project) => project.release_type === "album");
-  return { albums, total: albums.length, listened: ratedProjectCount(albums) };
+export function projectRatingProgress(projects: ArtistAlbum[]): ProjectRatingProgress {
+  return { projects, total: projects.length, rated: ratedProjectCount(projects) };
 }
 
 export function projectTypeDistribution(projects: ArtistAlbum[]): ProjectTypeDistribution[] {
