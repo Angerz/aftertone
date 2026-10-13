@@ -25,9 +25,9 @@ from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_artist_image, delete_cover, get_album, get_artist, get_revision, import_artist_image_from_url, import_cover_from_url, list_albums, list_artists, list_favorite_songs, list_revisions, mark_for_revisit, search_tracks, update_album, update_artist, update_track_artists, upload_artist_image, upload_cover
+from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_artist_image, delete_cover, get_album, get_artist, get_revision, import_artist_image_from_url, import_cover_from_url, list_albums, list_artist_tracks, list_artists, list_favorite_songs, list_revisions, mark_for_revisit, search_tracks, update_album, update_artist, update_track_artists, upload_artist_image, upload_cover
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.models.music import Album, Artist, FavoriteSongEntry, LegacyRating, RatingRevision, Track
+from app.models.music import Album, Artist, FavoriteSongEntry, LegacyRating, RatingRevision, Track, TrackRatingRevision
 from app.schemas.music import AlbumCreate, ArtistCreate, ArtistUpdate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
 from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
@@ -645,6 +645,39 @@ def test_artist_list_primary_and_featuring_scopes_are_distinct() -> None:
     assert [artist.name for artist in featuring_rows.items] == ["Featuring only"]
     assert [artist.name for artist in searched.items] == ["Primary artist"]
     assert [artist.name for artist in unused_rows.items] == ["Unused artist"]
+
+
+def test_artist_tracks_use_latest_native_scores_and_primary_credit_inheritance() -> None:
+    with SessionLocal() as session:
+        album = create_album(AlbumCreate.model_validate({
+            **album_payload("Primary album"), "artists": [{"name": "Primary artist"}], "year": 2025,
+            "release_date": "2025-11-20", "tracks": [{"position": 1, "title": "First"}, {"position": 2, "title": "Second"}],
+        }), session)
+        older = RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("7"))
+        session.add(older); session.flush()
+        session.add_all([
+            TrackRatingRevision(rating_revision_id=older.id, track_id=album.tracks[0].id, track_title="First", track_position=1, score=Decimal("9"), include_in_pre_rating=True),
+            TrackRatingRevision(rating_revision_id=older.id, track_id=album.tracks[1].id, track_title="Second", track_position=2, score=Decimal("8"), include_in_pre_rating=True),
+        ])
+        latest = RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("7"))
+        session.add(latest); session.flush()
+        session.add_all([
+            TrackRatingRevision(rating_revision_id=latest.id, track_id=album.tracks[0].id, track_title="First", track_position=1, score=Decimal("0"), include_in_pre_rating=False),
+            TrackRatingRevision(rating_revision_id=latest.id, track_id=album.tracks[1].id, track_title="Second", track_position=2, score=Decimal("8.5"), include_in_pre_rating=True),
+        ])
+        guest = create_artist(ArtistCreate(name="Featured guest"), session)
+        update_track_artists(album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[guest.id]), session)
+        session.commit()
+        artist_id = album.artists[0].id
+        tracks = list_artist_tracks(artist_id, page_size=1, sort="rating", direction="desc", session=session)
+        all_tracks = list_artist_tracks(artist_id, sort="rating", direction="asc", session=session)
+        searched = list_artist_tracks(artist_id, search="primary album", session=session)
+        featured = list_artist_tracks(guest.id, session=session)
+
+    assert [track.title for track in tracks.items] == ["Second"] and tracks.total == 2
+    assert [(track.title, track.score) for track in all_tracks.items] == [("First", Decimal("0")), ("Second", Decimal("8.5"))]
+    assert [track.title for track in searched.items] == ["Second", "First"]
+    assert featured.total == 0
 
 
 def test_new_and_existing_artists_default_to_active() -> None:

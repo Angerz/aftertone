@@ -132,6 +132,19 @@ class TrackAppearanceResponse(APIModel):
     role: str
 
 
+class ArtistTrackResponse(APIModel):
+    track_id: int
+    title: str
+    disc_number: int
+    track_position: int
+    score: Decimal | None = None
+    album_id: int
+    album_title: str
+    album_year: int | None
+    album_release_date: date | None = None
+    album_cover_url: str | None = None
+
+
 class ArtistDetailResponse(ArtistResponse):
     albums: list[ArtistAlbumResponse]
     featured_appearances: list[TrackAppearanceResponse]

@@ -30,6 +30,7 @@ from app.schemas.music import (
     ArtistAlbumResponse,
     ArtistDetailResponse,
     ArtistResponse,
+    ArtistTrackResponse,
     TrackAppearanceResponse,
     TrackCreditsUpdate, TrackUpdate,
     LegacyImportCommitResponse,
@@ -611,6 +612,43 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
         ) for credit in sorted(artist.track_credits, key=lambda credit: (
             credit.track.album.release_year is None, -(credit.track.album.release_year or 0), credit.track.album.title.casefold(), credit.track.disc_number, credit.track.position,
         )) if credit.role == TrackArtistRole.FEATURED],
+    )
+
+
+@app.get("/api/artists/{artist_id}/tracks", response_model=PaginatedResponse[ArtistTrackResponse], tags=["artists"])
+def list_artist_tracks(
+    artist_id: int, page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    search: str | None = None, rated_only: bool = False, sort: Literal["rating", "release_date", "album", "title"] = "rating",
+    direction: Literal["asc", "desc"] | None = None, session: Session = Depends(get_session),
+) -> PaginatedResponse[ArtistTrackResponse]:
+    if session.get(Artist, artist_id) is None:
+        raise HTTPException(status_code=404, detail="artist not found")
+    explicit_primary = select(TrackArtist.id).where(TrackArtist.track_id == Track.id, TrackArtist.artist_id == artist_id, TrackArtist.role == TrackArtistRole.PRIMARY).exists()
+    has_explicit_primary = select(TrackArtist.id).where(TrackArtist.track_id == Track.id, TrackArtist.role == TrackArtistRole.PRIMARY).exists()
+    inherited_primary = select(AlbumArtist.id).where(AlbumArtist.album_id == Album.id, AlbumArtist.artist_id == artist_id).exists()
+    latest_revision_id = select(RatingRevision.id).where(RatingRevision.album_id == Album.id).order_by(RatingRevision.created_at.desc(), RatingRevision.id.desc()).limit(1).correlate(Album).scalar_subquery()
+    track_score = select(TrackRatingRevision.score).where(TrackRatingRevision.rating_revision_id == latest_revision_id, TrackRatingRevision.track_id == Track.id).correlate(Album, Track).scalar_subquery()
+    filters = [or_(explicit_primary, (~has_explicit_primary) & inherited_primary)]
+    if rated_only:
+        filters.append(track_score.is_not(None))
+    if search and (needle := normalize_search_text(search)):
+        filters.append(or_(func.search_normalize(Track.title).like(f"%{needle}%"), func.search_normalize(Album.title).like(f"%{needle}%")))
+    default_direction = "desc" if sort in {"rating", "release_date"} else "asc"
+    direction = direction or default_direction
+    ordered = lambda expression: expression.asc() if direction == "asc" else expression.desc()
+    release_descending = (Album.release_year.is_(None).asc(), Album.release_year.desc(), Album.release_date.is_(None).asc(), Album.release_date.desc())
+    stable_order = (func.search_normalize(Album.title).asc(), Track.disc_number.asc(), Track.position.asc(), Track.id.asc())
+    ordering = (
+        (track_score.is_(None).asc(), ordered(track_score), *release_descending, *stable_order) if sort == "rating" else
+        (Album.release_year.is_(None).asc(), ordered(Album.release_year), Album.release_date.is_(None).asc(), ordered(Album.release_date), *stable_order) if sort == "release_date" else
+        (ordered(func.search_normalize(Album.title)), *release_descending, Track.disc_number.asc(), Track.position.asc(), Track.id.asc()) if sort == "album" else
+        (ordered(func.search_normalize(Track.title)), *release_descending, func.search_normalize(Album.title).asc(), Track.disc_number.asc(), Track.position.asc(), Track.id.asc())
+    )
+    total = session.scalar(select(func.count(Track.id)).select_from(Track).join(Album).where(*filters)) or 0
+    rows = session.execute(select(Track, Album, track_score).join(Album).where(*filters).order_by(*ordering).offset((page - 1) * page_size).limit(page_size)).all()
+    return PaginatedResponse(
+        items=[ArtistTrackResponse(track_id=track.id, title=track.title, disc_number=track.disc_number, track_position=track.position, score=score, album_id=album.id, album_title=album.title, album_year=album.release_year, album_release_date=album.release_date, album_cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None) for track, album, score in rows],
+        page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size,
     )
 
 
