@@ -52,7 +52,7 @@ def _request(path: str, params: dict[str, str], client: httpx.Client | None = No
         if response.status_code in {429, 503}:
             raise MusicBrainzError("MusicBrainz is temporarily unavailable. Try again shortly.", status_code=503)
         if response.status_code == 404:
-            raise MusicBrainzError("MusicBrainz release was not found.", status_code=404)
+            raise MusicBrainzError("MusicBrainz record was not found.", status_code=404)
         response.raise_for_status()
         return response.json()
     except httpx.TimeoutException as error:
@@ -86,6 +86,16 @@ def _release_date(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _artist_type(value: str | None) -> str | None:
+    normalized = (value or "").casefold()
+    return normalized if normalized in {"person", "group"} else None
+
+
+def _life_span(payload: dict[str, Any]) -> tuple[str | None, str | None]:
+    lifespan = payload.get("life-span") or {}
+    return lifespan.get("begin"), lifespan.get("end")
 
 
 def map_release_type(primary_type: str | None, secondary_types: list[str] | None = None) -> ReleaseType:
@@ -128,6 +138,38 @@ def search_releases(query: str, artist: str | None = None, client: httpx.Client 
             "disambiguation": release.get("disambiguation") or group.get("disambiguation"),
         })
     return results
+
+
+def search_artists(query: str, client: httpx.Client | None = None) -> list[dict[str, Any]]:
+    name = query.strip()
+    if not name:
+        raise MusicBrainzError("Enter an artist name to search.", status_code=422)
+    safe_name = name.replace('"', "")
+    payload = _request("/artist", {"query": f'artist:"{safe_name}"', "limit": "12"}, client)
+    results = []
+    for artist in payload.get("artists", []):
+        begin, end = _life_span(artist)
+        results.append({
+            "musicbrainz_artist_id": artist["id"], "name": artist.get("name", "Unknown artist"),
+            "artist_type": _artist_type(artist.get("type")), "country_code": artist.get("country"),
+            "disambiguation": artist.get("disambiguation") or None, "life_span_begin": begin, "life_span_end": end,
+        })
+    return results
+
+
+def artist_preview(artist_id: str, client: httpx.Client | None = None) -> dict[str, Any]:
+    payload = _request(f"/artist/{artist_id}", {}, client)
+    begin, end = _life_span(payload)
+    artist_type = _artist_type(payload.get("type"))
+    return {
+        "musicbrainz_artist_id": payload["id"], "name": payload.get("name", "Unknown artist"), "artist_type": artist_type,
+        "country_code": payload.get("country"), "disambiguation": payload.get("disambiguation") or None,
+        "life_span_begin": begin, "life_span_end": end,
+        "birth_date": _release_date(begin) if artist_type == "person" else None,
+        "death_date": _release_date(end) if artist_type == "person" else None,
+        "formed_year": _year(begin) if artist_type == "group" else None,
+        "dissolved_year": _year(end) if artist_type == "group" else None,
+    }
 
 
 def release_preview(release_id: str, client: httpx.Client | None = None) -> dict[str, Any]:

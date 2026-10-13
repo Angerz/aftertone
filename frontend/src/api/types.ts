@@ -43,6 +43,8 @@ export interface LegacyRatingDetail { id: number; album_id: number; extracted_sc
 export interface AlbumFacets { decades: Record<string, number[]> }
 export interface AlbumRatingSummary { average: number | null; rated_count: number }
 export interface MusicBrainzSearchResult { musicbrainz_release_id: string; musicbrainz_release_group_id: string | null; title: string; artists: string[]; date: string | null; year: number | null; country: string | null; release_type: string | null; disc_count: number; track_count: number; disambiguation: string | null }
+export interface MusicBrainzArtistSearchResult { musicbrainz_artist_id: string; name: string; artist_type: ArtistType | null; country_code: string | null; disambiguation: string | null; life_span_begin: string | null; life_span_end: string | null }
+export interface MusicBrainzArtistPreview extends MusicBrainzArtistSearchResult { birth_date: string | null; death_date: string | null; formed_year: number | null; dissolved_year: number | null }
 export interface MusicBrainzTrackPreview { disc_number: number; position: number; title: string; primary_artists: string[] }
 export interface MusicBrainzReleasePreview { musicbrainz_release_id: string; title: string; artists: string[]; year: number | null; release_date?: string | null; release_type: ReleaseType; source_release_type: string | null; disc_count: number; tracks: MusicBrainzTrackPreview[]; cover_url: string | null }
 export interface MusicBrainzImport { musicbrainz_release_id: string; title: string; artists: ArtistCreditInput[]; year: number | null; release_date?: string | null; release_type: ReleaseType; disc_count: number; tracks: MusicBrainzTrackPreview[]; cover_url: string | null }

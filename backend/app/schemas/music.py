@@ -174,6 +174,23 @@ class MusicBrainzSearchResult(APIModel):
     disambiguation: str | None = None
 
 
+class MusicBrainzArtistSearchResult(APIModel):
+    musicbrainz_artist_id: str
+    name: str
+    artist_type: ArtistType | None = None
+    country_code: str | None = None
+    disambiguation: str | None = None
+    life_span_begin: str | None = None
+    life_span_end: str | None = None
+
+
+class MusicBrainzArtistPreview(MusicBrainzArtistSearchResult):
+    birth_date: date | None = None
+    death_date: date | None = None
+    formed_year: int | None = None
+    dissolved_year: int | None = None
+
+
 class MusicBrainzTrackPreview(APIModel):
     disc_number: int = Field(ge=1, le=99)
     position: int = Field(ge=1)

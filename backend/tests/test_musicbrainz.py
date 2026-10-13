@@ -50,3 +50,18 @@ def test_search_retries_one_temporary_musicbrainz_failure(monkeypatch) -> None:
     client = RetryingClient()
     assert musicbrainz.search_releases("Microdosis", "Mora", client) == []
     assert client.calls == 2
+
+
+def test_artist_search_and_preview_map_only_compatible_metadata() -> None:
+    results = musicbrainz.search_artists("Beyoncé", Client({"artists": [{
+        "id": "artist-id", "name": "Beyoncé", "type": "Person", "country": "US",
+        "disambiguation": "American singer", "life-span": {"begin": "1981-09-04"},
+    }]}))
+    assert results == [{"musicbrainz_artist_id": "artist-id", "name": "Beyoncé", "artist_type": "person", "country_code": "US", "disambiguation": "American singer", "life_span_begin": "1981-09-04", "life_span_end": None}]
+    group = musicbrainz.artist_preview("group-id", Client({
+        "id": "group-id", "name": "Daft Punk", "type": "Group", "country": "FR",
+        "life-span": {"begin": "1993", "end": "2021"},
+    }))
+    assert group["artist_type"] == "group"
+    assert (group["formed_year"], group["dissolved_year"]) == (1993, 2021)
+    assert group["birth_date"] is None

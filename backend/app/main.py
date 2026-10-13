@@ -42,6 +42,8 @@ from app.schemas.music import (
     LegacyReconciliationResponse,
     LegacyRatingDetailResponse,
     MusicBrainzImportRequest,
+    MusicBrainzArtistPreview,
+    MusicBrainzArtistSearchResult,
     MusicBrainzReleasePreview,
     MusicBrainzSearchResult,
     LatestRevisionResponse,
@@ -60,7 +62,7 @@ from app.services.covers import CoverError, download_cover_from_url, remove_cove
 from app.services.artists import artist_ids_from_inputs, get_or_create_artist, normalize_artist_name, set_album_artists, set_track_artists
 from app.services.search import normalize_search_text
 from app.ratings.calculator import calculate_rating_breakdown
-from app.integrations.musicbrainz import MusicBrainzError, release_preview, search_releases
+from app.integrations.musicbrainz import MusicBrainzError, artist_preview, release_preview, search_artists, search_releases
 from decimal import Decimal
 
 app = FastAPI(title="Aftertone API", version="0.1.0")
@@ -166,6 +168,22 @@ def create_album(payload: AlbumCreate, session: Session = Depends(get_session)) 
 def search_musicbrainz_releases(query: Annotated[str, Query(min_length=1, max_length=300)], artist: str | None = None) -> list[MusicBrainzSearchResult]:
     try:
         return [MusicBrainzSearchResult.model_validate(item) for item in search_releases(query, artist)]
+    except MusicBrainzError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+@app.get("/api/metadata/musicbrainz/artists/search", response_model=list[MusicBrainzArtistSearchResult], tags=["metadata"])
+def search_musicbrainz_artists(query: Annotated[str, Query(min_length=1, max_length=300)]) -> list[MusicBrainzArtistSearchResult]:
+    try:
+        return [MusicBrainzArtistSearchResult.model_validate(item) for item in search_artists(query)]
+    except MusicBrainzError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+@app.get("/api/metadata/musicbrainz/artists/{artist_id}", response_model=MusicBrainzArtistPreview, tags=["metadata"])
+def get_musicbrainz_artist(artist_id: str) -> MusicBrainzArtistPreview:
+    try:
+        return MusicBrainzArtistPreview.model_validate(artist_preview(artist_id))
     except MusicBrainzError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
 
