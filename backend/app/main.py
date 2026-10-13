@@ -465,7 +465,7 @@ def artist_project_summaries():
 @app.get("/api/artists", response_model=PaginatedResponse[ArtistResponse], tags=["artists"])
 def list_artists(
     page: Annotated[int, Query(ge=1)] = 1, page_size: Annotated[int, Query(ge=1, le=100)] = 50, search: str | None = None,
-    active: bool | None = None, unused: bool = False, scope: Literal["all", "primary", "featuring"] = "all", sort: Literal["name", "rating", "projects"] = "name", session: Session = Depends(get_session),
+    active: bool | None = None, unused: bool = False, scope: Literal["all", "primary", "featuring"] = "all", sort: Literal["name", "rating", "projects"] = "name", direction: Literal["asc", "desc"] | None = None, session: Session = Depends(get_session),
 ) -> PaginatedResponse[ArtistResponse]:
     album_count, primary_track_count, featured_track_count = artist_usage_counts()
     project_counts, average_rating, rated_project_count = artist_project_summaries()
@@ -480,9 +480,13 @@ def list_artists(
     elif scope == "featuring":
         filters.extend([album_count == 0, featured_track_count > 0])
     total = session.scalar(select(func.count(Artist.id)).where(*filters)) or 0
-    name_order = (func.search_normalize(Artist.name), Artist.id)
-    ordering = name_order if sort == "name" else (
-        (average_rating.is_(None), average_rating.desc(), *name_order) if sort == "rating" else (album_count.desc(), *name_order)
+    default_direction = "asc" if sort == "name" else "desc"
+    direction = direction or default_direction
+    ordered = lambda expression: expression.asc() if direction == "asc" else expression.desc()
+    alphabetical_order = (ordered(func.search_normalize(Artist.name)), Artist.id.asc())
+    tie_breaker_order = (func.search_normalize(Artist.name).asc(), Artist.id.asc())
+    ordering = (*alphabetical_order,) if sort == "name" else (
+        (average_rating.is_(None).asc(), ordered(average_rating), *tie_breaker_order) if sort == "rating" else (ordered(album_count), *tie_breaker_order)
     )
     rows = session.execute(
         select(Artist, album_count, primary_track_count, featured_track_count, *project_counts.values(), average_rating, rated_project_count)

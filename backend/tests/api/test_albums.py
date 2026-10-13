@@ -583,6 +583,33 @@ def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
     assert [artist.name for artist in inactive.items] == ["Aaron"]
 
 
+def test_artist_list_supports_bidirectional_sorting_with_unrated_last() -> None:
+    with SessionLocal() as session:
+        def project(artist: str, title: str, score: str | None = None):
+            album = create_album(AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}]}), session)
+            if score is not None:
+                session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal(score)))
+
+        project("Alpha", "Alpha one", "9")
+        project("Alpha", "Alpha two")
+        project("Bravo", "Bravo one", "7")
+        project("No rating", "No rating one")
+        session.commit()
+        rating_desc = list_artists(sort="rating", direction="desc", session=session)
+        rating_asc = list_artists(sort="rating", direction="asc", session=session)
+        name_desc = list_artists(sort="name", direction="desc", session=session)
+        projects_asc = list_artists(sort="projects", direction="asc", session=session)
+        projects_desc = list_artists(sort="projects", direction="desc", session=session)
+        first_rating_page = list_artists(sort="rating", direction="asc", page=1, page_size=1, session=session)
+
+    assert [artist.name for artist in rating_desc.items] == ["Alpha", "Bravo", "No rating"]
+    assert [artist.name for artist in rating_asc.items] == ["Bravo", "Alpha", "No rating"]
+    assert [artist.name for artist in name_desc.items] == ["No rating", "Bravo", "Alpha"]
+    assert [artist.name for artist in projects_asc.items] == ["Bravo", "No rating", "Alpha"]
+    assert [artist.name for artist in projects_desc.items] == ["Alpha", "Bravo", "No rating"]
+    assert [artist.name for artist in first_rating_page.items] == ["Bravo"]
+
+
 def test_artist_list_sorts_names_and_tie_breakers_without_diacritics() -> None:
     with SessionLocal() as session:
         for name in ["Álvaro", "Ariana", "Bravo", "Zoé"]:
