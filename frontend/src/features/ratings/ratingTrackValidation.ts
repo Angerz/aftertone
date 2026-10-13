@@ -13,6 +13,10 @@ export function trackScoreIsValid(score: EditableTrackScore, includedInPre: bool
   return includedInPre ? trackScoreInRange(score) : !hasTrackScore(score) || trackScoreInRange(score);
 }
 
+export function shouldShowTrackScoreError(score: EditableTrackScore, includedInPre: boolean, touched: boolean, submitAttempted: boolean): boolean {
+  return (touched || submitAttempted) && !trackScoreIsValid(score, includedInPre);
+}
+
 export function scoreForRevision(score: EditableTrackScore): number | null {
   return hasTrackScore(score) ? Number(score) : null;
 }

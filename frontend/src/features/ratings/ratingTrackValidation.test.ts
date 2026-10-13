@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { scoreForRevision, trackScoreIsValid } from "./ratingTrackValidation";
+import { scoreForRevision, shouldShowTrackScoreError, trackScoreIsValid } from "./ratingTrackValidation";
 
 describe("rating track validation", () => {
   it("accepts a blank score when the track is excluded from PRE", () => {
@@ -24,9 +24,17 @@ describe("rating track validation", () => {
 
   it("keeps a numeric score valid when it is excluded", () => {
     expect(trackScoreIsValid("7.5", false)).toBe(true);
+    expect(scoreForRevision("7.5")).toBe(7.5);
   });
 
   it("serializes a cleared excluded score as null, never zero", () => {
     expect(scoreForRevision(null)).toBeNull();
+  });
+
+  it("defers invalid-score feedback until a track is touched or submission is attempted", () => {
+    expect(shouldShowTrackScoreError(null, true, false, false)).toBe(false);
+    expect(shouldShowTrackScoreError(null, true, true, false)).toBe(true);
+    expect(shouldShowTrackScoreError(null, true, false, true)).toBe(true);
+    expect(shouldShowTrackScoreError("0", true, true, true)).toBe(false);
   });
 });
