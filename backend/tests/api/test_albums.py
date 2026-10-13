@@ -418,6 +418,18 @@ def test_optional_release_date_preserves_year_only_records_and_filters_months() 
         AlbumCreate.model_validate({**album_payload("Invalid calendar"), "release_date": "2026-02-30"})
 
 
+def test_artist_detail_includes_optional_project_release_date() -> None:
+    with SessionLocal() as session:
+        album = create_album(AlbumCreate.model_validate({
+            **album_payload("Dated project"), "year": 2026, "release_date": "2026-02-27",
+        }), session)
+        session.commit()
+        detail = get_artist(album.artists[0].id, session)
+
+    assert detail.albums[0].year == 2026
+    assert detail.albums[0].release_date == date(2026, 2, 27)
+
+
 def test_library_status_filters_use_current_revisit_and_effective_rating_before_pagination() -> None:
     with SessionLocal() as session:
         revisit_native = create_album(AlbumCreate.model_validate({**album_payload("Revisit native"), "year": 2020}), session)

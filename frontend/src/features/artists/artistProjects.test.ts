@@ -35,6 +35,17 @@ describe("artist projects", () => {
     expect(groups[0].projects.map((item) => item.title)).toEqual(["Newest", "Alpha", "Zeta", "Unknown"]);
   });
 
+  it("prioritizes exact dates within a year without inventing dates for year-only projects", () => {
+    const groups = groupArtistProjects([
+      project({ id: 1, title: "Year only", year: 2025 }),
+      project({ id: 2, title: "March", year: 2025, release_date: "2025-03-15" }),
+      project({ id: 3, title: "November", year: 2025, release_date: "2025-11-20" }),
+      project({ id: 4, title: "Older", year: 2024, release_date: "2024-12-01" }),
+      project({ id: 5, title: "Alpha", year: 2025 }),
+    ]);
+    expect(groups[0].projects.map((item) => item.title)).toEqual(["November", "March", "Alpha", "Year only", "Older"]);
+  });
+
   it("formats project counts in release-type order with correct singulars", () => {
     expect(formatProjectCounts({ album: 4, ep: 1, mixtape: 1 })).toBe("4 albums · 1 EP · 1 mixtape");
     expect(formatProjectCounts({ live: 1 })).toBe("1 live project");

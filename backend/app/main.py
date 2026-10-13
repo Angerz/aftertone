@@ -592,7 +592,7 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
         featured_track_count=sum(credit.role == TrackArtistRole.FEATURED for credit in artist.track_credits),
         is_unused=not artist.album_credits and not artist.track_credits,
         albums=[ArtistAlbumResponse(
-            id=album.id, title=album.title, year=album.release_year, release_type=album.release_type,
+            id=album.id, title=album.title, year=album.release_year, release_date=album.release_date, release_type=album.release_type,
             cover_url=f"/media/covers/{album.cover_filename}" if album.cover_filename else None,
             artists=[ArtistResponse(id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active) for credit in sorted(album.artist_credits, key=lambda credit: credit.position)],
             rating=effective_album_rating(album),

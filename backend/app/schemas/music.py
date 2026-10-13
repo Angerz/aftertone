@@ -112,6 +112,7 @@ class ArtistAlbumResponse(APIModel):
     id: int
     title: str
     year: int | None
+    release_date: date | None = None
     release_type: ReleaseType
     cover_url: str | None = None
     artists: list[ArtistResponse]

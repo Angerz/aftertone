@@ -70,16 +70,21 @@ export function formatProjectCounts(counts: Partial<Record<ReleaseType, number>>
   return items.length ? items.join(" · ") : "No primary projects";
 }
 
-function compareProjects(left: ArtistAlbum, right: ArtistAlbum): number {
-  if (left.year !== null && right.year !== null && left.year !== right.year) return right.year - left.year;
-  if (left.year !== null && right.year === null) return -1;
-  if (left.year === null && right.year !== null) return 1;
-  return left.title.localeCompare(right.title);
+export function compareArtistProjects(left: ArtistAlbum, right: ArtistAlbum): number {
+  const leftYear = left.year ?? null; const rightYear = right.year ?? null;
+  if (leftYear !== null && rightYear !== null && leftYear !== rightYear) return rightYear - leftYear;
+  if (leftYear !== null && rightYear === null) return -1;
+  if (leftYear === null && rightYear !== null) return 1;
+  const leftDate = left.release_date ?? null; const rightDate = right.release_date ?? null;
+  if (leftDate && rightDate && leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+  if (leftDate && !rightDate) return -1;
+  if (!leftDate && rightDate) return 1;
+  return (left.title ?? "").localeCompare(right.title ?? "") || left.id - right.id;
 }
 
 export function groupArtistProjects(projects: ArtistAlbum[]): ArtistProjectGroup[] {
   return releaseTypeOrder.flatMap((releaseType) => {
-    const grouped = projects.filter((project) => project.release_type === releaseType).sort(compareProjects);
+    const grouped = projects.filter((project) => project.release_type === releaseType).sort(compareArtistProjects);
     return grouped.length ? [{ releaseType, label: releaseTypeLabels[releaseType], projects: grouped }] : [];
   });
 }
