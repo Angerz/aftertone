@@ -19,6 +19,14 @@ wrapper reads `.env` if present and honors database/media paths and optional
 useful locally but insufficient for disaster recovery. Files use 0600 and directories
 0700; originals and existing destinations are never overwritten.
 
+## Railway backup and recovery
+
+Railway does not expose a host backup bind mount. Use the [Railway maintenance, archive
+export and restore procedure](railway.md#complete-backups-without-another-railway-service).
+It stops journal writers while retaining SSH access, then uses this same archive tool.
+Native volume snapshots are an additional layer; retain an independently verified,
+encrypted export. No additional backup service or cloud resource is created.
+
 ## VPS/container backup
 
 `/backups` is a bind mount on the host, independent of the application image/container.

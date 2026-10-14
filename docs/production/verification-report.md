@@ -1,5 +1,9 @@
 # Final verification report
 
+This is the historical initial-hardening report. For the selected hosting adaptation,
+see the newer [Railway verification report](railway-verification.md) and
+[Railway deployment runbook](railway.md).
+
 Date: 2026-10-14. Baseline: `42b0e4e`. Validation used synthetic data and temporary
 storage. No production deployment or personal database migration was performed.
 

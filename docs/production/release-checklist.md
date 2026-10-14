@@ -15,7 +15,10 @@ items against the chosen host, then obtain owner approval to publish.
 
 ## Owner decisions and operational blockers
 
-- [ ] Select a host, region and acceptable monthly cost, including persistent disk and backups.
+- [ ] Follow the [Railway runbook](railway.md) in the existing Hobby workspace; confirm
+      one service/replica/volume, region, resource limits and combined usage projection.
+- [ ] Verify Railway root-volume initialization drops the serving process to UID/GID
+      10001 with no effective capabilities; remove first-boot database consent after initialization.
 - [ ] Review the actual dataset: all catalogue metadata/images and numeric revision history
       become public. Notes/revisit state stay private. If selective album/history publishing
       is needed, implement it before release.
@@ -25,7 +28,8 @@ items against the chosen host, then obtain owner approval to publish.
 - [ ] Mount persistent local storage with UID 10001 ownership and restricted permissions.
 - [ ] Configure off-host encrypted backups, retention, scheduling and failure alerts.
 - [ ] Download and restore a snapshot from that external destination into a separate volume.
-- [ ] Configure DNS/TLS/Caddy, host firewall and patching; only the reverse proxy is public.
+- [ ] Configure Railway HTTPS/temporary domain, then the custom domain and exact origin.
+      For the alternative VPS path, configure Caddy/firewall/host patching.
 - [ ] Verify public reads and denied direct anonymous writes, uploads, imports and admin GETs.
 - [ ] Verify owner sign-in/edit/rate/upload/import/logout and expired-session handling in a browser.
 - [ ] Verify live remote image import (DNS pinning, TLS/SNI, redirect behavior) on that host.
@@ -34,4 +38,5 @@ items against the chosen host, then obtain owner approval to publish.
 
 No architectural approval is currently pending. The code keeps SQLite, one worker and
 one application container; it does not require any new service account or hosting plan.
-Provider choice, content publication and external backup destination remain owner decisions.
+Railway is selected. Public content review, external backup retention and the final
+deployment remain owner actions; no cloud resources are created by these changes.

@@ -25,6 +25,7 @@ COPY backend/alembic.ini ./
 COPY backend/alembic ./alembic
 COPY --from=frontend /build/dist /app/frontend
 COPY scripts/backup.py /app/scripts/backup.py
+COPY deploy/runtime.py /app/runtime.py
 COPY --chmod=755 deploy/entrypoint.sh /app/entrypoint.sh
 USER 10001:10001
 EXPOSE 8017

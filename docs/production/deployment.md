@@ -1,6 +1,8 @@
 # Controlled production deployment
 
-The repository is prepared for deployment; nothing has been deployed. The intended
+The repository is prepared for deployment; nothing has been deployed.
+Railway is the selected first host: follow the ordered [Railway runbook](railway.md).
+The VPS/Compose procedure below remains supported as a portable alternative. The intended
 origin is `https://aftrtone.angerz.dev`, with the React client at `/`, API at `/api`,
 and public generated media at `/media/covers`. Other projects on `angerz.dev` should
 have separate hostnames, cookies, storage and reverse-proxy site blocks.
@@ -9,7 +11,10 @@ have separate hostnames, cookies, storage and reverse-proxy site blocks.
 
 One Python container serves the built frontend, API and media. It runs as UID/GID
 10001 with a read-only root filesystem and a writable `/data` volume. SQLite and
-both image types live there. No database service, queue, Redis or PostgreSQL is needed.
+both image types live there. On Railway only, an explicitly enabled initializer repairs
+root-mounted volume ownership and drops to UID/GID 10001 before migrations/application
+startup. The default image and Compose still start unprivileged. No database service,
+queue, Redis or PostgreSQL is needed.
 The Docker build uses Node 22 and Python 3.13; build tools and Node are absent from the
 runtime. Exact Python runtime dependencies and the npm lockfile are used during build.
 
@@ -21,11 +26,10 @@ file with `cp`; use the supplied backup utility. Startup applies Alembic before 
 and exits on migration/configuration failure. Back up before upgrades and inspect
 release migrations; never run concurrent migration jobs.
 
-Choose a provider only after checking current pricing, persistent-disk availability,
-minimum billing, bandwidth, backup storage and sleep/reclamation behavior. A small
-Linux VPS is straightforward; Railway requires a persistent volume and one replica;
-Oracle's free offer is an option only if its availability and operating requirements
-fit. No provider or US$0–5 monthly price is guaranteed here.
+Railway will use the existing Hobby account, one application service and one volume.
+No additional subscription or database is required. Resource usage, storage, backups
+and bandwidth remain billable; the combined US$5 target is not guaranteed. See the
+Railway guide's measured-resource discussion and actual-platform acceptance gates.
 
 ## Owner provisioning and configuration
 
