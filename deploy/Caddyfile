@@ -1,0 +1,16 @@
+{
+	servers {
+		timeouts {
+			read_body 30s
+			read_header 10s
+			idle 60s
+		}
+	}
+}
+
+aftrtone.angerz.dev {
+	request_body {
+		max_size 12MB
+	}
+	reverse_proxy 127.0.0.1:8017
+}

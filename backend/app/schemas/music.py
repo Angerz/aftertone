@@ -1,16 +1,42 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
-from typing import Generic, Literal, TypeVar
+from decimal import Decimal as DomainDecimal
+from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
+from app.auth import owner_context
 from app.models.music import ArtistType, ReleaseType
+
+Decimal = Annotated[DomainDecimal, PlainSerializer(float, when_used="json")]
 
 
 class APIModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", json_encoders={Decimal: float})
+    model_config = ConfigDict(extra="forbid")
+
+    @model_serializer(mode="wrap")
+    def public_fields(self, handler):
+        data = handler(self)
+        if not owner_context.get():
+            for key in data:
+                if (
+                    key == "notes"
+                    or key.endswith("_notes")
+                    or key in {"revisit_reason", "revisit_marked_at"}
+                ):
+                    data[key] = None
+                elif key == "needs_revisit":
+                    data[key] = False
+        return data
 
 
 T = TypeVar("T")
@@ -81,7 +107,7 @@ class ArtistUpdate(APIModel):
         return value
 
     @model_validator(mode="after")
-    def name_must_not_be_null_when_supplied(self) -> "ArtistUpdate":
+    def name_must_not_be_null_when_supplied(self) -> ArtistUpdate:
         if "name" in self.model_fields_set and self.name is None:
             raise ValueError("name must not be null")
         return self
@@ -223,7 +249,7 @@ class MusicBrainzImportRequest(APIModel):
     cover_url: str | None = None
 
     @model_validator(mode="after")
-    def synchronize_release_year(self) -> "MusicBrainzImportRequest":
+    def synchronize_release_year(self) -> MusicBrainzImportRequest:
         if self.release_date is not None:
             if self.year is not None and self.year != self.release_date.year:
                 raise ValueError("year must match release date")
@@ -254,7 +280,7 @@ class AlbumCreate(APIModel):
         return value
 
     @model_validator(mode="after")
-    def validate_disc_tracks(self) -> "AlbumCreate":
+    def validate_disc_tracks(self) -> AlbumCreate:
         if self.release_date is not None:
             if self.year is not None and self.year != self.release_date.year:
                 raise ValueError("year must match release date")
@@ -300,12 +326,14 @@ class AlbumUpdate(APIModel):
         return value
 
     @model_validator(mode="after")
-    def validate_disc_tracks(self) -> "AlbumUpdate":
+    def validate_disc_tracks(self) -> AlbumUpdate:
         if self.release_date is not None:
             if self.year is not None and self.year != self.release_date.year:
                 raise ValueError("year must match release date")
             self.year = self.release_date.year
-        if self.tracks is not None and any(track.disc_number > self.disc_count for track in self.tracks):
+        if self.tracks is not None and any(
+            track.disc_number > self.disc_count for track in self.tracks
+        ):
             raise ValueError("track disc number must not exceed album disc count")
         return self
 
@@ -334,19 +362,19 @@ class TrackResponse(APIModel):
 
 class FavoriteSongEntryWrite(APIModel):
     track_id: int = Field(ge=1)
-    base_score: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
-    emotional_connection: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
-    replay_value: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
-    originality: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    base_score: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("10"))
+    emotional_connection: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("5"))
+    replay_value: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("5"))
+    originality: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("5"))
     genre: str | None = Field(default=None, max_length=100)
     notes: str | None = None
 
 
 class FavoriteSongEntryUpdate(APIModel):
-    base_score: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
-    emotional_connection: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
-    replay_value: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
-    originality: Decimal = Field(ge=Decimal("0"), le=Decimal("5"))
+    base_score: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("10"))
+    emotional_connection: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("5"))
+    replay_value: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("5"))
+    originality: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("5"))
     genre: str | None = Field(default=None, max_length=100)
     notes: str | None = None
 
@@ -483,6 +511,7 @@ class LegacyReconciliationPreviewResponse(APIModel):
     bad_experience: Decimal | None
     final_rating: Decimal | None
 
+
 class LegacyRatingDetailResponse(APIModel):
     id: int
     album_id: int
@@ -497,21 +526,21 @@ class LegacyRatingDetailResponse(APIModel):
 
 class TrackRatingRevisionCreate(APIModel):
     track_id: int = Field(ge=1)
-    score: Decimal | None = Field(default=None, ge=Decimal("0"), le=Decimal("10"))
+    score: Decimal | None = Field(default=None, ge=DomainDecimal("0"), le=DomainDecimal("10"))
     include_in_pre_rating: bool = True
     notes: str | None = None
 
     @model_validator(mode="after")
-    def included_tracks_require_a_score(self) -> "TrackRatingRevisionCreate":
+    def included_tracks_require_a_score(self) -> TrackRatingRevisionCreate:
         if self.include_in_pre_rating and self.score is None:
             raise ValueError("A track included in PRE requires a score.")
         return self
 
 
 class RatingRevisionCreate(APIModel):
-    coherence: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
+    coherence: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("10"))
     coherence_notes: str | None = None
-    emotion: Decimal = Field(ge=Decimal("0"), le=Decimal("10"))
+    emotion: Decimal = Field(ge=DomainDecimal("0"), le=DomainDecimal("10"))
     emotion_notes: str | None = None
     album_notes: str | None = None
     tracks: list[TrackRatingRevisionCreate]

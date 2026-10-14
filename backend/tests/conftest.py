@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 TESTS_DIR = Path(__file__).parent
 os.environ["AFTERTONE_DATABASE_URL"] = f"sqlite:///{TESTS_DIR / 'aftertone-api-test.sqlite3'}"
 os.environ["AFTERTONE_COVER_DIR"] = str(TESTS_DIR / ".test-covers")

@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
-from typing import Any
 from unicodedata import normalize
+from zipfile import BadZipFile, ZipFile
 
 from openpyxl import load_workbook
 from sqlalchemy import func, select
@@ -19,7 +19,14 @@ TOLERANCE = Decimal("0.001")
 
 
 def _header(value: object) -> str:
-    return "".join(character for character in normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().upper() if character.isalnum())
+    return "".join(
+        character
+        for character in normalize("NFKD", str(value or ""))
+        .encode("ascii", "ignore")
+        .decode()
+        .upper()
+        if character.isalnum()
+    )
 
 
 def _decimal(value: object, field_name: str, *, required: bool = True) -> Decimal | None:
@@ -76,8 +83,22 @@ class LegacyPreviewRow:
 
 
 def _column_map(values: tuple[object, ...]) -> dict[str, int]:
-    aliases = {"ALBUM": "title", "ARTISTA": "artist", "ANO": "year", "DECADA": "decade", "GENERO": "genre", "PRECALIFICACION": "pre", "COHERENCIA": "coherence", "MALAEXP": "bad", "EMOCION": "emotion"}
-    return {aliases[key]: index for index, value in enumerate(values) if (key := _header(value)) in aliases}
+    aliases = {
+        "ALBUM": "title",
+        "ARTISTA": "artist",
+        "ANO": "year",
+        "DECADA": "decade",
+        "GENERO": "genre",
+        "PRECALIFICACION": "pre",
+        "COHERENCIA": "coherence",
+        "MALAEXP": "bad",
+        "EMOCION": "emotion",
+    }
+    return {
+        aliases[key]: index
+        for index, value in enumerate(values)
+        if (key := _header(value)) in aliases
+    }
 
 
 def _blank(value: object) -> bool:
@@ -96,24 +117,72 @@ def _text(value: object) -> str | None:
 
 
 def _legacy_duplicate(session: Session, title: str, artist: str) -> bool:
-    return session.scalar(select(Album.id).join(AlbumArtist).join(Artist).where(func.lower(Album.title) == title.casefold(), Artist.normalized_name == normalize_artist_name(artist))) is not None
+    return (
+        session.scalar(
+            select(Album.id)
+            .join(AlbumArtist)
+            .join(Artist)
+            .where(
+                func.lower(Album.title) == title.casefold(),
+                Artist.normalized_name == normalize_artist_name(artist),
+            )
+        )
+        is not None
+    )
 
 
 def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
+    if len(data) > 10 * 1024 * 1024:
+        raise ValueError("Workbook must be 10 MB or smaller.")
     try:
-        formulas = load_workbook(BytesIO(data), data_only=False, read_only=True).active
-        cached = load_workbook(BytesIO(data), data_only=True, read_only=True).active
-    except Exception as error:
+        with ZipFile(BytesIO(data)) as archive:
+            members = archive.infolist()
+            if len(members) > 500 or sum(item.file_size for item in members) > 32 * 1024 * 1024:
+                raise ValueError("Workbook expanded size exceeds the processing limit.")
+    except BadZipFile as error:
         raise ValueError("Workbook could not be opened.") from error
-    headers = next(formulas.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    formulas_book = cached_book = None
+    try:
+        formulas_book = load_workbook(
+            BytesIO(data), data_only=False, read_only=True, keep_links=False
+        )
+        cached_book = load_workbook(BytesIO(data), data_only=True, read_only=True, keep_links=False)
+        for sheet in (formulas_book.active, cached_book.active):
+            if sheet is None or (sheet.max_row or 0) > 2001 or (sheet.max_column or 0) > 64:
+                raise ValueError("Workbook is limited to 2000 data rows and 64 columns.")
+        return _preview_sheets(formulas_book.active, cached_book.active, session)
+    except ValueError:
+        raise
+    except Exception as error:
+        raise ValueError("Workbook could not be processed.") from error
+    finally:
+        if formulas_book is not None:
+            formulas_book.close()
+        if cached_book is not None:
+            cached_book.close()
+
+
+def _preview_sheets(formulas, cached, session: Session) -> list[LegacyPreviewRow]:
+    headers = next(formulas.iter_rows(min_row=1, max_row=1, max_col=64, values_only=True), ())
     columns = _column_map(headers)
     missing = {"title", "artist", "pre", "coherence", "emotion"} - set(columns)
     if missing:
         raise ValueError(f"Workbook is missing required headers: {', '.join(sorted(missing))}.")
-    cached_rows = {index: row for index, row in enumerate(cached.iter_rows(min_row=2, values_only=True), start=2)}
+    cached_rows = {
+        index: row
+        for index, row in enumerate(
+            cached.iter_rows(min_row=2, max_row=2002, max_col=64, values_only=True), start=2
+        )
+    }
     rows: list[LegacyPreviewRow] = []
     seen: set[tuple[str, str]] = set()
-    for row_number, values in enumerate(formulas.iter_rows(min_row=2, values_only=True), start=2):
+    for row_number, values in enumerate(
+        formulas.iter_rows(min_row=2, max_row=2002, max_col=64, values_only=True), start=2
+    ):
+        if row_number > 2001:
+            if any(value is not None for value in values):
+                raise ValueError("Workbook exceeds 2000 data rows.")
+            break
         if not any(value is not None and str(value).strip() for value in values):
             continue
         row = LegacyPreviewRow(row_number=row_number)
@@ -122,10 +191,26 @@ def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
             row.artist = _text(values[columns["artist"]])
             if not row.title or not row.artist:
                 raise ValueError("Album and artist are required.")
-            row.year = int(_decimal(values[columns["year"]], "Year", required=False)) if columns.get("year") is not None and values[columns["year"]] not in (None, "") else None
-            row.decade = str(values[columns["decade"]]).strip() if columns.get("decade") is not None and values[columns["decade"]] else None
-            row.genre = str(values[columns["genre"]]).strip() if columns.get("genre") is not None and values[columns["genre"]] else None
-            rating_values = [values[columns["pre"]], values[columns["coherence"]], values[columns["emotion"]]]
+            row.year = (
+                int(_decimal(values[columns["year"]], "Year", required=False))
+                if columns.get("year") is not None and values[columns["year"]] not in (None, "")
+                else None
+            )
+            row.decade = (
+                str(values[columns["decade"]]).strip()
+                if columns.get("decade") is not None and values[columns["decade"]]
+                else None
+            )
+            row.genre = (
+                str(values[columns["genre"]]).strip()
+                if columns.get("genre") is not None and values[columns["genre"]]
+                else None
+            )
+            rating_values = [
+                values[columns["pre"]],
+                values[columns["coherence"]],
+                values[columns["emotion"]],
+            ]
             if columns.get("bad") is not None:
                 rating_values.append(values[columns["bad"]])
             if all(_blank(value) for value in rating_values):
@@ -140,34 +225,60 @@ def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
             row.extracted_scores, denominator, suffix = parse_pre_formula(row.pre_formula)
             row.coherence = _decimal(values[columns["coherence"]], "Coherence")
             row.emotion = _decimal(values[columns["emotion"]], "Emotion")
-            result = calculate_rating([TrackScore(score) for score in row.extracted_scores], coherence=row.coherence, emotion=row.emotion)
-            row.computed_pre_rating, row.computed_bad_experience, row.computed_final_rating = result.pre_rating, result.bad_experience, result.final_rating
+            result = calculate_rating(
+                [TrackScore(score) for score in row.extracted_scores],
+                coherence=row.coherence,
+                emotion=row.emotion,
+            )
+            row.computed_pre_rating, row.computed_bad_experience, row.computed_final_rating = (
+                result.pre_rating,
+                result.bad_experience,
+                result.final_rating,
+            )
             if denominator != len(row.extracted_scores):
-                row.warn(f"Legacy PRE denominator ({denominator}) differs from extracted score count ({len(row.extracted_scores)}). Aftertone uses the extracted scores for canonical computation.")
+                row.warn(
+                    f"Legacy PRE denominator ({denominator}) differs from extracted score count ({len(row.extracted_scores)}). Aftertone uses the extracted scores for canonical computation."
+                )
             adjustment = legacy_adjustment_value(suffix)
             if adjustment:
-                row.warn(f"Legacy PRE formula contains a manual adjustment ({adjustment:+f}). Aftertone does not apply it to canonical computation.")
+                row.warn(
+                    f"Legacy PRE formula contains a manual adjustment ({adjustment:+f}). Aftertone does not apply it to canonical computation."
+                )
             cached_value = cached_rows[row_number][columns["pre"]]
             try:
                 row.legacy_pre_rating = _decimal(cached_value, "Legacy PRE", required=False)
             except ValueError:
-                row.warn("Legacy PRE could not be read; formula-derived PRE will be retained for audit.")
+                row.warn(
+                    "Legacy PRE could not be read; formula-derived PRE will be retained for audit."
+                )
             else:
                 if row.legacy_pre_rating is None:
-                    row.warn("Cached PRE value is unavailable; formula-derived PRE will be retained for audit.")
+                    row.warn(
+                        "Cached PRE value is unavailable; formula-derived PRE will be retained for audit."
+                    )
             if columns.get("bad") is not None:
                 try:
                     row.legacy_bad_experience = _bad_experience(values[columns["bad"]])
                 except ValueError:
-                    row.warn("Legacy bad experience could not be read; Aftertone will use the computed value.")
+                    row.warn(
+                        "Legacy bad experience could not be read; Aftertone will use the computed value."
+                    )
                 else:
                     if row.legacy_bad_experience is None:
-                        row.warn("Legacy bad experience could not be read; Aftertone will use the computed value.")
+                        row.warn(
+                            "Legacy bad experience could not be read; Aftertone will use the computed value."
+                        )
             if row.year is None:
                 row.warn("Year is missing.")
-            if row.legacy_pre_rating is not None and abs(row.legacy_pre_rating - row.computed_pre_rating) > TOLERANCE:
+            if (
+                row.legacy_pre_rating is not None
+                and abs(row.legacy_pre_rating - row.computed_pre_rating) > TOLERANCE
+            ):
                 row.warn("Legacy PRE differs from the computed PRE.")
-            if row.legacy_bad_experience is not None and abs(row.legacy_bad_experience - row.computed_bad_experience) > TOLERANCE:
+            if (
+                row.legacy_bad_experience is not None
+                and abs(row.legacy_bad_experience - row.computed_bad_experience) > TOLERANCE
+            ):
                 row.warn("Legacy bad experience differs from the computed value.")
             key = (row.artist.casefold(), row.title.casefold())
             if key in seen or _legacy_duplicate(session, row.title, row.artist):
@@ -179,7 +290,9 @@ def preview_workbook(data: bytes, session: Session) -> list[LegacyPreviewRow]:
     return rows
 
 
-def commit_rows(rows: list[LegacyPreviewRow], selected_row_numbers: set[int], session: Session) -> tuple[int, int, int]:
+def commit_rows(
+    rows: list[LegacyPreviewRow], selected_row_numbers: set[int], session: Session
+) -> tuple[int, int, int]:
     imported = skipped = failed = 0
     for row in rows:
         if row.row_number not in selected_row_numbers or row.status == "error":
@@ -192,15 +305,34 @@ def commit_rows(rows: list[LegacyPreviewRow], selected_row_numbers: set[int], se
                 skipped += 1
                 continue
             album = Album(title=row.title, release_year=row.year, release_type=ReleaseType.ALBUM)
-            session.add(album); session.flush()
+            session.add(album)
+            session.flush()
             set_album_artists(session, album, [get_or_create_artist(session, row.artist).id])
             if row.status == "unrated":
-                session.commit(); imported += 1
+                session.commit()
+                imported += 1
                 continue
             if row.coherence is None or row.emotion is None or not row.pre_formula:
                 raise ValueError("Row is incomplete.")
-            legacy = LegacyRating(album=album, legacy_final_rating=row.legacy_final_rating, legacy_pre_rating=row.legacy_pre_rating, legacy_bad_experience=row.legacy_bad_experience, coherence=row.coherence, emotion=row.emotion, extracted_scores=[str(score) for score in row.extracted_scores], pre_formula=row.pre_formula, computed_pre_rating=row.computed_pre_rating, computed_bad_experience=row.computed_bad_experience, computed_final_rating=row.computed_final_rating, legacy_decade=row.decade, legacy_genre=row.genre)
-            session.add(legacy); session.commit(); imported += 1
+            legacy = LegacyRating(
+                album=album,
+                legacy_final_rating=row.legacy_final_rating,
+                legacy_pre_rating=row.legacy_pre_rating,
+                legacy_bad_experience=row.legacy_bad_experience,
+                coherence=row.coherence,
+                emotion=row.emotion,
+                extracted_scores=[str(score) for score in row.extracted_scores],
+                pre_formula=row.pre_formula,
+                computed_pre_rating=row.computed_pre_rating,
+                computed_bad_experience=row.computed_bad_experience,
+                computed_final_rating=row.computed_final_rating,
+                legacy_decade=row.decade,
+                legacy_genre=row.genre,
+            )
+            session.add(legacy)
+            session.commit()
+            imported += 1
         except Exception:
-            session.rollback(); failed += 1
+            session.rollback()
+            failed += 1
     return imported, skipped, failed

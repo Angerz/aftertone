@@ -10,13 +10,21 @@ def score(value: str, included: bool = True) -> TrackScore:
 
 
 def test_pre_rating_averages_included_tracks_only() -> None:
-    result = calculate_rating([score("10"), score("8"), score("0", False)], coherence=Decimal("0"), emotion=Decimal("5"))
+    result = calculate_rating(
+        [score("10"), score("8"), score("0", False)], coherence=Decimal("0"), emotion=Decimal("5")
+    )
     assert result.pre_rating == Decimal("9")
 
 
 def test_unrated_excluded_track_does_not_affect_calculation() -> None:
-    result = calculate_rating([score("10"), TrackScore(None, False)], coherence=Decimal("0"), emotion=Decimal("5"))
-    assert (result.pre_rating, result.bad_experience, result.final_rating) == (Decimal("10"), Decimal("0"), Decimal("10"))
+    result = calculate_rating(
+        [score("10"), TrackScore(None, False)], coherence=Decimal("0"), emotion=Decimal("5")
+    )
+    assert (result.pre_rating, result.bad_experience, result.final_rating) == (
+        Decimal("10"),
+        Decimal("0"),
+        Decimal("10"),
+    )
 
 
 def test_unrated_included_track_is_invalid() -> None:
@@ -25,20 +33,37 @@ def test_unrated_included_track_is_invalid() -> None:
 
 
 def test_no_included_tracks_has_no_rating() -> None:
-    assert calculate_rating([score("8", False)], coherence=Decimal("5"), emotion=Decimal("5")).final_rating is None
+    assert (
+        calculate_rating(
+            [score("8", False)], coherence=Decimal("5"), emotion=Decimal("5")
+        ).final_rating
+        is None
+    )
 
 
 @pytest.mark.parametrize(
     ("tracks", "expected"),
-    [([score("4.9")], "1"), ([score("5")], "0.5"), ([score("6.9")], "0.5"), ([score("7")], "0"), ([score("4"), score("6"), score("8")], "0.5")],
+    [
+        ([score("4.9")], "1"),
+        ([score("5")], "0.5"),
+        ([score("6.9")], "0.5"),
+        ([score("7")], "0"),
+        ([score("4"), score("6"), score("8")], "0.5"),
+    ],
 )
 def test_bad_experience_thresholds(tracks: list[TrackScore], expected: str) -> None:
-    assert calculate_rating(tracks, coherence=Decimal("0"), emotion=Decimal("5")).bad_experience == Decimal(expected)
+    assert calculate_rating(
+        tracks, coherence=Decimal("0"), emotion=Decimal("5")
+    ).bad_experience == Decimal(expected)
 
 
 def test_bad_experience_extremes() -> None:
-    assert calculate_rating([score("10")], coherence=Decimal("0"), emotion=Decimal("5")).bad_experience == Decimal("0")
-    assert calculate_rating([score("0")], coherence=Decimal("0"), emotion=Decimal("5")).bad_experience == Decimal("1")
+    assert calculate_rating(
+        [score("10")], coherence=Decimal("0"), emotion=Decimal("5")
+    ).bad_experience == Decimal("0")
+    assert calculate_rating(
+        [score("0")], coherence=Decimal("0"), emotion=Decimal("5")
+    ).bad_experience == Decimal("1")
 
 
 def test_bad_experience_does_not_reduce_negative_emotion_penalty() -> None:
@@ -66,7 +91,12 @@ def test_known_tpab_formula() -> None:
 
 def test_breakdown_uses_the_authoritative_formula_and_sums_to_final_rating() -> None:
     result = calculate_rating([score("9.709")], coherence=Decimal("0"), emotion=Decimal("8"))
-    breakdown = calculate_rating_breakdown(pre_rating=result.pre_rating, bad_experience=result.bad_experience, coherence=Decimal("0"), emotion=Decimal("8"))
+    breakdown = calculate_rating_breakdown(
+        pre_rating=result.pre_rating,
+        bad_experience=result.bad_experience,
+        coherence=Decimal("0"),
+        emotion=Decimal("8"),
+    )
     assert breakdown.pre_contribution == Decimal("9.709")
     assert breakdown.coherence_contribution == Decimal("0")
     assert breakdown.bad_experience_contribution == Decimal("0")

@@ -4,7 +4,21 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -63,9 +77,12 @@ class Album(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(300))
-    musicbrainz_release_id: Mapped[str | None] = mapped_column(String(36), unique=True, nullable=True)
+    musicbrainz_release_id: Mapped[str | None] = mapped_column(
+        String(36), unique=True, nullable=True
+    )
     release_type: Mapped[ReleaseType] = mapped_column(
-        Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]), default=ReleaseType.ALBUM
+        Enum(ReleaseType, values_callable=lambda enum: [item.value for item in enum]),
+        default=ReleaseType.ALBUM,
     )
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     release_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -73,19 +90,29 @@ class Album(Base):
     cover_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
     needs_revisit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     revisit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    revisit_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revisit_marked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     tracks: Mapped[list[Track]] = relationship(back_populates="album", cascade="all, delete-orphan")
-    revisions: Mapped[list[RatingRevision]] = relationship(back_populates="album", cascade="all, delete-orphan")
-    legacy_ratings: Mapped[list[LegacyRating]] = relationship(back_populates="album", cascade="all, delete-orphan")
-    artist_credits: Mapped[list[AlbumArtist]] = relationship(back_populates="album", cascade="all, delete-orphan")
+    revisions: Mapped[list[RatingRevision]] = relationship(
+        back_populates="album", cascade="all, delete-orphan"
+    )
+    legacy_ratings: Mapped[list[LegacyRating]] = relationship(
+        back_populates="album", cascade="all, delete-orphan"
+    )
+    artist_credits: Mapped[list[AlbumArtist]] = relationship(
+        back_populates="album", cascade="all, delete-orphan"
+    )
 
 
 class Track(Base):
     __tablename__ = "tracks"
     __table_args__ = (
-        UniqueConstraint("album_id", "disc_number", "position", name="uq_track_album_disc_position"),
+        UniqueConstraint(
+            "album_id", "disc_number", "position", name="uq_track_album_disc_position"
+        ),
         CheckConstraint("disc_number >= 1", name="ck_track_disc_number_positive"),
         CheckConstraint("position >= 1", name="ck_track_position_positive"),
     )
@@ -98,13 +125,20 @@ class Track(Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     album: Mapped[Album] = relationship(back_populates="tracks")
-    artist_credits: Mapped[list[TrackArtist]] = relationship(back_populates="track", cascade="all, delete-orphan")
-    favorite_song_entry: Mapped[FavoriteSongEntry | None] = relationship(back_populates="track", uselist=False)
+    artist_credits: Mapped[list[TrackArtist]] = relationship(
+        back_populates="track", cascade="all, delete-orphan"
+    )
+    favorite_song_entry: Mapped[FavoriteSongEntry | None] = relationship(
+        back_populates="track", uselist=False
+    )
 
 
 class AlbumArtist(Base):
     __tablename__ = "album_artists"
-    __table_args__ = (UniqueConstraint("album_id", "artist_id", name="uq_album_artist"), UniqueConstraint("album_id", "position", name="uq_album_artist_position"))
+    __table_args__ = (
+        UniqueConstraint("album_id", "artist_id", name="uq_album_artist"),
+        UniqueConstraint("album_id", "position", name="uq_album_artist_position"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     album_id: Mapped[int] = mapped_column(ForeignKey("albums.id", ondelete="CASCADE"))
@@ -117,12 +151,17 @@ class AlbumArtist(Base):
 
 class TrackArtist(Base):
     __tablename__ = "track_artists"
-    __table_args__ = (UniqueConstraint("track_id", "artist_id", "role", name="uq_track_artist_role"), UniqueConstraint("track_id", "role", "position", name="uq_track_artist_role_position"))
+    __table_args__ = (
+        UniqueConstraint("track_id", "artist_id", "role", name="uq_track_artist_role"),
+        UniqueConstraint("track_id", "role", "position", name="uq_track_artist_role_position"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
     artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="RESTRICT"))
-    role: Mapped[TrackArtistRole] = mapped_column(Enum(TrackArtistRole, values_callable=lambda enum: [item.value for item in enum]))
+    role: Mapped[TrackArtistRole] = mapped_column(
+        Enum(TrackArtistRole, values_callable=lambda enum: [item.value for item in enum])
+    )
     position: Mapped[int] = mapped_column(Integer)
 
     track: Mapped[Track] = relationship(back_populates="artist_credits")
@@ -144,10 +183,16 @@ class FavoriteSongEntry(Base):
     final_score: Mapped[Decimal] = mapped_column(Numeric(6, 4))
     last_rank_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_rank_to: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    last_rank_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    top_100_entered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_rank_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    top_100_entered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     track: Mapped[Track] = relationship(back_populates="favorite_song_entry")
 
@@ -185,7 +230,9 @@ class TrackRatingRevision(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    rating_revision_id: Mapped[int] = mapped_column(ForeignKey("rating_revisions.id", ondelete="CASCADE"))
+    rating_revision_id: Mapped[int] = mapped_column(
+        ForeignKey("rating_revisions.id", ondelete="CASCADE")
+    )
     track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="RESTRICT"))
     track_title: Mapped[str] = mapped_column(String(300))
     disc_number: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -218,7 +265,11 @@ class LegacyRating(Base):
     reconciliation_status: Mapped[str] = mapped_column(String(20), default="pending")
     legacy_decade: Mapped[str | None] = mapped_column(String(30), nullable=True)
     legacy_genre: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    reconciled_revision_id: Mapped[int | None] = mapped_column(ForeignKey("rating_revisions.id", ondelete="RESTRICT"), nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    reconciled_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rating_revisions.id", ondelete="RESTRICT"), nullable=True
+    )
 
     album: Mapped[Album] = relationship(back_populates="legacy_ratings")

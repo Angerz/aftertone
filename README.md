@@ -2,7 +2,7 @@
 
 Aftertone is my local music journal: a private place for my listening history, my thoughts, and my love of music. I use it to keep albums, per-track scores, and notes without overwriting what I felt at a particular moment. It includes a visual album library, structured artists and credits, legacy Excel import and reconciliation, and Album Momentum.
 
-It is intentionally not a public catalogue, streaming service, or social network. My collection and reflections stay on my own machine.
+It supports local use and a controlled public deployment: visitors can browse music metadata and numeric ratings, while only the owner can edit. Written journal notes and revisit details remain private. See [production deployment](docs/production/deployment.md) before exposing it to the internet.
 
 ## Features
 
@@ -30,7 +30,7 @@ Copy the sample environment file and adjust loopback ports only if they conflict
 cp .env.example .env
 ```
 
-With the included Makefile, prepare dependencies once and then start both processes together:
+With the included Makefile, prepare dependencies once. Generate an owner password hash with `cd backend && .venv/bin/python -m app.auth`, store it single-quoted as `AFTERTONE_OWNER_PASSWORD_HASH` in `.env`, and then start both processes together:
 
 ```bash
 make setup
@@ -64,17 +64,27 @@ set -a; source ../.env; set +a
 npm run dev -- --port "$AFTERTONE_WEB_PORT"
 ```
 
-The Vite server is explicitly loopback-bound in `vite.config.ts`. The API permits requests only from `AFTERTONE_WEB_ORIGIN` (the sample value is the local Vite URL).
+The Vite server is loopback-bound and proxies `/api` and `/media` to the backend. The frontend uses same-origin requests. CORS permits the configured web origin; owner sessions and CSRF checks independently protect writes. Sign in with the owner control. Without a configured hash the application is read-only.
 
-Album covers are stored in `AFTERTONE_COVER_DIR` (by default `backend/data/covers`). A complete backup consists of the SQLite database and that cover directory.
+Album covers are stored in `AFTERTONE_COVER_DIR` (by default `backend/data/covers`). Both album covers and artist portraits use this directory. A complete backup includes the SQLite database, all media, and snapshot metadata.
 
-## Daily database backup
+## Complete backups
 
-`scripts/backup_aftertone.sh` makes a consistent SQLite copy in `backend/data/backups/`. Schedule it once a day with cron:
+Stop application writers and run `make backup`. The script creates a consistent SQLite
+copy plus covers, artist portraits and a checksummed manifest. Keep an encrypted copy
+outside the application host and regularly test restoration. See
+[backup and restore](docs/production/backup-restore.md) for local/container commands,
+scheduling, retention and non-destructive recovery.
 
-```cron
-0 3 * * * /home/angerz/projects/aftertone/scripts/backup_aftertone.sh >> /home/angerz/projects/aftertone/backend/data/backups/backup.log 2>&1
-```
+## Production preparation
+
+The multi-stage `Dockerfile` serves frontend and API together as a non-root user;
+`compose.yaml` provides persistent storage and a loopback-only application port.
+Production requires an owner Argon2id hash, an HTTPS origin and persistent absolute paths.
+Use `.env.production.example` as a template. No deployment is performed automatically.
+Read the [security audit](docs/production/security-audit.md),
+[deployment guide](docs/production/deployment.md) and
+[release checklist](docs/production/release-checklist.md).
 
 ## Tests
 
@@ -83,6 +93,8 @@ For release confidence:
 ```bash
 cd backend
 pytest
+ruff check .
+ruff format --check .
 
 cd ../frontend
 npm run lint
@@ -128,7 +140,7 @@ final score = Puntuación × 25%
 
 Songs are ordered first by final score. Exact score ties are deterministic: emotional connection, replay value, base score, originality, then track title.
 
-Full interactive API documentation is available at `/docs` while the backend is running.
+Interactive API documentation is available at `/docs` in development and disabled in production. The full [API access inventory](docs/production/api-inventory.md) identifies public and owner-only routes.
 
 ### Albums
 
@@ -159,7 +171,8 @@ See `docs/decisions/` for the full rationale.
 
 ## Known limitations
 
-- Aftertone is intentionally private and local: it has no authentication, sharing, or sync because it is for me, not a public audience.
+- There is one owner and no registration or sync. All catalogue metadata and numeric history are public when deployed; there is no per-entry publication control.
 - There is no browser E2E suite yet.
 - Legacy multi-artist strings are not automatically split into separate artists.
-- The backend currently emits Pydantic deprecation warnings that should be resolved before Pydantic v3.
+- Some history/ranking reads scale with the complete personal catalogue; monitor before broader traffic.
+- The current TestClient emits an HTTPX integration deprecation warning; runtime behavior is unaffected.

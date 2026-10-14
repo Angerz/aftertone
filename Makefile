@@ -11,7 +11,7 @@ help:
 	@echo "make dev     Migrate and run the API and web client together"
 	@echo "make backup  Create a consistent SQLite backup now"
 	@echo "make test    Run backend and frontend tests"
-	@echo "make lint    Type-check the frontend"
+	@echo "make lint    Lint/format-check Python and type-check the frontend"
 	@echo "make build   Build the frontend"
 
 setup:
@@ -49,6 +49,10 @@ test:
 	npm test -- --run
 
 lint:
+	cd backend
+	.venv/bin/ruff check .
+	.venv/bin/ruff format --check .
+	cd ..
 	npm --prefix frontend run lint
 
 build:

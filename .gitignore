@@ -42,3 +42,12 @@ backend/data/backups/
 frontend_template/
 
 *.xd
+
+# Local credentials, exports and production backup archives
+.env.*
+!.env.example
+!.env.production.example
+*.tar.gz
+/backups/
+*.egg-info/
+.ruff_cache/

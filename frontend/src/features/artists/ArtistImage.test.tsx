@@ -13,7 +13,7 @@ describe("ArtistImage", () => {
 
   it("renders a local portrait when one is available", () => {
     const markup = renderToStaticMarkup(<ArtistImage artist={{ name: "Fiona Apple", image_url: "/media/covers/portrait.webp" }} />);
-    expect(markup).toContain('src="http://127.0.0.1:8017/media/covers/portrait.webp"');
+    expect(markup).toContain('src="/media/covers/portrait.webp"');
     expect(markup).toContain('alt="Portrait of Fiona Apple"');
   });
 });

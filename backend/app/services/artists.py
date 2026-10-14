@@ -31,7 +31,10 @@ def set_album_artists(session: Session, album: Album, artist_ids: list[int]) -> 
         raise ValueError("an album artist does not exist")
     album.artist_credits.clear()
     session.flush()
-    album.artist_credits.extend(AlbumArtist(artist_id=artist_id, position=index + 1) for index, artist_id in enumerate(artist_ids))
+    album.artist_credits.extend(
+        AlbumArtist(artist_id=artist_id, position=index + 1)
+        for index, artist_id in enumerate(artist_ids)
+    )
 
 
 def artist_ids_from_inputs(session: Session, inputs) -> list[int]:
@@ -46,13 +49,25 @@ def artist_ids_from_inputs(session: Session, inputs) -> list[int]:
     return ids
 
 
-def set_track_artists(session: Session, track: Track, primary_ids: list[int], featured_ids: list[int]) -> None:
-    if set(primary_ids) & set(featured_ids) or len(primary_ids) != len(set(primary_ids)) or len(featured_ids) != len(set(featured_ids)):
+def set_track_artists(
+    session: Session, track: Track, primary_ids: list[int], featured_ids: list[int]
+) -> None:
+    if (
+        set(primary_ids) & set(featured_ids)
+        or len(primary_ids) != len(set(primary_ids))
+        or len(featured_ids) != len(set(featured_ids))
+    ):
         raise ValueError("track artist credits must be unique")
     ids = primary_ids + featured_ids
     if ids and len(session.scalars(select(Artist.id).where(Artist.id.in_(ids))).all()) != len(ids):
         raise ValueError("a track artist does not exist")
     track.artist_credits.clear()
     session.flush()
-    track.artist_credits.extend(TrackArtist(artist_id=artist_id, role=TrackArtistRole.PRIMARY, position=index + 1) for index, artist_id in enumerate(primary_ids))
-    track.artist_credits.extend(TrackArtist(artist_id=artist_id, role=TrackArtistRole.FEATURED, position=index + 1) for index, artist_id in enumerate(featured_ids))
+    track.artist_credits.extend(
+        TrackArtist(artist_id=artist_id, role=TrackArtistRole.PRIMARY, position=index + 1)
+        for index, artist_id in enumerate(primary_ids)
+    )
+    track.artist_credits.extend(
+        TrackArtist(artist_id=artist_id, role=TrackArtistRole.FEATURED, position=index + 1)
+        for index, artist_id in enumerate(featured_ids)
+    )

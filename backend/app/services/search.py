@@ -1,8 +1,8 @@
 """Text normalization shared by local catalogue search and alphabetical ordering."""
+
 from __future__ import annotations
 
 import unicodedata
-
 
 _APOSTROPHES = str.maketrans({"'": "", "’": "", "‘": "", "`": ""})
 

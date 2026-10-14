@@ -10,7 +10,6 @@ import httpx
 
 from app.models.music import ReleaseType
 
-
 MUSICBRAINZ_URL = "https://musicbrainz.org/ws/2"
 _request_lock = threading.Lock()
 _last_request_at = 0.0
@@ -27,10 +26,14 @@ def _user_agent() -> str:
     return f"Aftertone/0.1.0 ({contact})"
 
 
-def _request(path: str, params: dict[str, str], client: httpx.Client | None = None) -> dict[str, Any]:
+def _request(
+    path: str, params: dict[str, str], client: httpx.Client | None = None
+) -> dict[str, Any]:
     global _last_request_at
     own_client = client is None
-    active_client = client or httpx.Client(timeout=httpx.Timeout(10.0), headers={"User-Agent": _user_agent()})
+    active_client = client or httpx.Client(
+        timeout=httpx.Timeout(10.0), headers={"User-Agent": _user_agent()}
+    )
     try:
         for attempt in range(2):
             with _request_lock:
@@ -38,7 +41,9 @@ def _request(path: str, params: dict[str, str], client: httpx.Client | None = No
                 if delay > 0:
                     time.sleep(delay)
                 try:
-                    response = active_client.get(f"{MUSICBRAINZ_URL}{path}", params={**params, "fmt": "json"})
+                    response = active_client.get(
+                        f"{MUSICBRAINZ_URL}{path}", params={**params, "fmt": "json"}
+                    )
                 finally:
                     _last_request_at = time.monotonic()
             if response.status_code not in {429, 503}:
@@ -50,7 +55,9 @@ def _request(path: str, params: dict[str, str], client: httpx.Client | None = No
                 except ValueError:
                     time.sleep(1.0)
         if response.status_code in {429, 503}:
-            raise MusicBrainzError("MusicBrainz is temporarily unavailable. Try again shortly.", status_code=503)
+            raise MusicBrainzError(
+                "MusicBrainz is temporarily unavailable. Try again shortly.", status_code=503
+            )
         if response.status_code == 404:
             raise MusicBrainzError("MusicBrainz record was not found.", status_code=404)
         response.raise_for_status()
@@ -69,7 +76,11 @@ def _request(path: str, params: dict[str, str], client: httpx.Client | None = No
 
 
 def _artist_names(credits: list[dict[str, Any]] | None) -> list[str]:
-    return [str(item.get("name") or item.get("artist", {}).get("name", "")).strip() for item in credits or [] if str(item.get("name") or item.get("artist", {}).get("name", "")).strip()]
+    return [
+        str(item.get("name") or item.get("artist", {}).get("name", "")).strip()
+        for item in credits or []
+        if str(item.get("name") or item.get("artist", {}).get("name", "")).strip()
+    ]
 
 
 def _year(date: str | None) -> int | None:
@@ -98,7 +109,9 @@ def _life_span(payload: dict[str, Any]) -> tuple[str | None, str | None]:
     return lifespan.get("begin"), lifespan.get("end")
 
 
-def map_release_type(primary_type: str | None, secondary_types: list[str] | None = None) -> ReleaseType:
+def map_release_type(
+    primary_type: str | None, secondary_types: list[str] | None = None
+) -> ReleaseType:
     primary = (primary_type or "").casefold()
     secondary = {item.casefold() for item in secondary_types or []}
     if "live" in secondary:
@@ -114,10 +127,16 @@ def map_release_type(primary_type: str | None, secondary_types: list[str] | None
 
 def _relevant_media(media: list[dict[str, Any]]) -> list[dict[str, Any]]:
     video_formats = {"dvd", "blu-ray", "blu ray", "vhs", "video"}
-    return [item for item in media if item.get("tracks") and str(item.get("format") or "").casefold() not in video_formats]
+    return [
+        item
+        for item in media
+        if item.get("tracks") and str(item.get("format") or "").casefold() not in video_formats
+    ]
 
 
-def search_releases(query: str, artist: str | None = None, client: httpx.Client | None = None) -> list[dict[str, Any]]:
+def search_releases(
+    query: str, artist: str | None = None, client: httpx.Client | None = None
+) -> list[dict[str, Any]]:
     title = query.strip()
     if not title:
         raise MusicBrainzError("Enter an album title to search.", status_code=422)
@@ -129,14 +148,21 @@ def search_releases(query: str, artist: str | None = None, client: httpx.Client 
     for release in payload.get("releases", []):
         group = release.get("release-group") or {}
         media = release.get("media") or []
-        results.append({
-            "musicbrainz_release_id": release["id"], "musicbrainz_release_group_id": group.get("id"),
-            "title": release.get("title", "Untitled"), "artists": _artist_names(release.get("artist-credit")),
-            "date": release.get("date"), "year": _year(release.get("date")), "country": release.get("country"),
-            "release_type": group.get("primary-type"), "disc_count": len(media) or 1,
-            "track_count": sum(int(item.get("track-count", 0)) for item in media),
-            "disambiguation": release.get("disambiguation") or group.get("disambiguation"),
-        })
+        results.append(
+            {
+                "musicbrainz_release_id": release["id"],
+                "musicbrainz_release_group_id": group.get("id"),
+                "title": release.get("title", "Untitled"),
+                "artists": _artist_names(release.get("artist-credit")),
+                "date": release.get("date"),
+                "year": _year(release.get("date")),
+                "country": release.get("country"),
+                "release_type": group.get("primary-type"),
+                "disc_count": len(media) or 1,
+                "track_count": sum(int(item.get("track-count", 0)) for item in media),
+                "disambiguation": release.get("disambiguation") or group.get("disambiguation"),
+            }
+        )
     return results
 
 
@@ -149,11 +175,17 @@ def search_artists(query: str, client: httpx.Client | None = None) -> list[dict[
     results = []
     for artist in payload.get("artists", []):
         begin, end = _life_span(artist)
-        results.append({
-            "musicbrainz_artist_id": artist["id"], "name": artist.get("name", "Unknown artist"),
-            "artist_type": _artist_type(artist.get("type")), "country_code": artist.get("country"),
-            "disambiguation": artist.get("disambiguation") or None, "life_span_begin": begin, "life_span_end": end,
-        })
+        results.append(
+            {
+                "musicbrainz_artist_id": artist["id"],
+                "name": artist.get("name", "Unknown artist"),
+                "artist_type": _artist_type(artist.get("type")),
+                "country_code": artist.get("country"),
+                "disambiguation": artist.get("disambiguation") or None,
+                "life_span_begin": begin,
+                "life_span_end": end,
+            }
+        )
     return results
 
 
@@ -162,9 +194,13 @@ def artist_preview(artist_id: str, client: httpx.Client | None = None) -> dict[s
     begin, end = _life_span(payload)
     artist_type = _artist_type(payload.get("type"))
     return {
-        "musicbrainz_artist_id": payload["id"], "name": payload.get("name", "Unknown artist"), "artist_type": artist_type,
-        "country_code": payload.get("country"), "disambiguation": payload.get("disambiguation") or None,
-        "life_span_begin": begin, "life_span_end": end,
+        "musicbrainz_artist_id": payload["id"],
+        "name": payload.get("name", "Unknown artist"),
+        "artist_type": artist_type,
+        "country_code": payload.get("country"),
+        "disambiguation": payload.get("disambiguation") or None,
+        "life_span_begin": begin,
+        "life_span_end": end,
         "birth_date": _release_date(begin) if artist_type == "person" else None,
         "death_date": _release_date(end) if artist_type == "person" else None,
         "formed_year": _year(begin) if artist_type == "group" else None,
@@ -173,25 +209,41 @@ def artist_preview(artist_id: str, client: httpx.Client | None = None) -> dict[s
 
 
 def release_preview(release_id: str, client: httpx.Client | None = None) -> dict[str, Any]:
-    payload = _request(f"/release/{release_id}", {"inc": "artist-credits+recordings+release-groups+media"}, client)
+    payload = _request(
+        f"/release/{release_id}", {"inc": "artist-credits+recordings+release-groups+media"}, client
+    )
     group = payload.get("release-group") or {}
     media = _relevant_media(payload.get("media") or [])
     tracks = []
     album_artists = _artist_names(payload.get("artist-credit"))
     for disc_number, medium in enumerate(media, start=1):
         for fallback_position, track in enumerate(medium.get("tracks") or [], start=1):
-            track_artists = _artist_names(track.get("artist-credit") or (track.get("recording") or {}).get("artist-credit"))
-            tracks.append({
-                "disc_number": disc_number, "position": int(track.get("position") or fallback_position),
-                "title": track.get("title") or (track.get("recording") or {}).get("title") or "Untitled",
-                "primary_artists": track_artists if track_artists != album_artists else [],
-            })
+            track_artists = _artist_names(
+                track.get("artist-credit") or (track.get("recording") or {}).get("artist-credit")
+            )
+            tracks.append(
+                {
+                    "disc_number": disc_number,
+                    "position": int(track.get("position") or fallback_position),
+                    "title": track.get("title")
+                    or (track.get("recording") or {}).get("title")
+                    or "Untitled",
+                    "primary_artists": track_artists if track_artists != album_artists else [],
+                }
+            )
     if not tracks:
-        raise MusicBrainzError("This MusicBrainz release has no importable audio tracks.", status_code=422)
+        raise MusicBrainzError(
+            "This MusicBrainz release has no importable audio tracks.", status_code=422
+        )
     return {
-        "musicbrainz_release_id": payload["id"], "title": payload.get("title", "Untitled"),
-        "artists": album_artists, "year": _year(payload.get("date")), "release_date": _release_date(payload.get("date")),
+        "musicbrainz_release_id": payload["id"],
+        "title": payload.get("title", "Untitled"),
+        "artists": album_artists,
+        "year": _year(payload.get("date")),
+        "release_date": _release_date(payload.get("date")),
         "release_type": map_release_type(group.get("primary-type"), group.get("secondary-types")),
-        "source_release_type": group.get("primary-type"), "disc_count": len(media), "tracks": tracks,
+        "source_release_type": group.get("primary-type"),
+        "disc_count": len(media),
+        "tracks": tracks,
         "cover_url": f"https://coverartarchive.org/release/{payload['id']}/front",
     }

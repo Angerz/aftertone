@@ -12,7 +12,9 @@ class RevisionTracksError(ValueError):
     """The submitted snapshot does not exactly match an album's track list."""
 
 
-def create_rating_revision(session: Session, album: Album, payload: RatingRevisionCreate) -> RatingRevision:
+def create_rating_revision(
+    session: Session, album: Album, payload: RatingRevisionCreate
+) -> RatingRevision:
     """Build and flush a complete immutable revision inside the caller's transaction."""
     submitted_ids = [item.track_id for item in payload.tracks]
     if len(submitted_ids) != len(set(submitted_ids)):

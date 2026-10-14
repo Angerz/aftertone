@@ -1,8 +1,8 @@
 """The only implementation of Aftertone's rating formula."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable
 
 ZERO = Decimal("0")
 FIVE = Decimal("5")
@@ -50,7 +50,11 @@ def calculate_rating(
             _validate_score(track.score, "track score")
         elif track.include_in_pre_rating:
             raise ValueError("an included track score is required")
-    included = [track.score for track in all_tracks if track.include_in_pre_rating and track.score is not None]
+    included = [
+        track.score
+        for track in all_tracks
+        if track.include_in_pre_rating and track.score is not None
+    ]
     if not included:
         return RatingResult(None, None, None, None)
 
@@ -60,21 +64,39 @@ def calculate_rating(
         for score in included
     )
     bad_experience = bad_points / Decimal(len(included))
-    breakdown = calculate_rating_breakdown(pre_rating=pre_rating, bad_experience=bad_experience, coherence=coherence, emotion=emotion)
-    return RatingResult(pre_rating, bad_experience, breakdown.emotion_contribution, breakdown.final_rating)
+    breakdown = calculate_rating_breakdown(
+        pre_rating=pre_rating, bad_experience=bad_experience, coherence=coherence, emotion=emotion
+    )
+    return RatingResult(
+        pre_rating, bad_experience, breakdown.emotion_contribution, breakdown.final_rating
+    )
 
 
-def calculate_rating_breakdown(*, pre_rating: Decimal | None, bad_experience: Decimal | None, coherence: Decimal, emotion: Decimal) -> RatingBreakdown:
+def calculate_rating_breakdown(
+    *,
+    pre_rating: Decimal | None,
+    bad_experience: Decimal | None,
+    coherence: Decimal,
+    emotion: Decimal,
+) -> RatingBreakdown:
     """Return the exact formula terms used to produce an already-snapshotted rating."""
     if pre_rating is None or bad_experience is None:
         return RatingBreakdown(None, None, None, None, None)
     coherence_contribution = ((coherence / TEN) ** 2) * Decimal("0.25")
     bad_experience_contribution = -Decimal("0.5") * (bad_experience**2)
-    emotion_contribution = ((emotion - FIVE) / Decimal("100") * Decimal("2.5"))
+    emotion_contribution = (emotion - FIVE) / Decimal("100") * Decimal("2.5")
     if emotion > FIVE:
         emotion_contribution *= ONE_MINUS(bad_experience)
-    final_rating = pre_rating + coherence_contribution + bad_experience_contribution + emotion_contribution
-    return RatingBreakdown(pre_rating, coherence_contribution, bad_experience_contribution, emotion_contribution, final_rating)
+    final_rating = (
+        pre_rating + coherence_contribution + bad_experience_contribution + emotion_contribution
+    )
+    return RatingBreakdown(
+        pre_rating,
+        coherence_contribution,
+        bad_experience_contribution,
+        emotion_contribution,
+        final_rating,
+    )
 
 
 def ONE_MINUS(value: Decimal) -> Decimal:

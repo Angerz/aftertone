@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:8017:8017"
+    environment:
+      AFTERTONE_ENV: production
+      AFTERTONE_WEB_ORIGIN: ${AFTERTONE_WEB_ORIGIN:-https://aftrtone.angerz.dev}
+      AFTERTONE_OWNER_PASSWORD_HASH: ${AFTERTONE_OWNER_PASSWORD_HASH:?Provision an owner password hash first}
+      AFTERTONE_SESSION_SECONDS: ${AFTERTONE_SESSION_SECONDS:-43200}
+      AFTERTONE_DATABASE_URL: sqlite:////data/aftertone.sqlite3
+      AFTERTONE_COVER_DIR: /data/covers
+      AFTERTONE_MUSICBRAINZ_CONTACT: ${AFTERTONE_MUSICBRAINZ_CONTACT:-https://github.com/Angerz/aftertone}
+    volumes:
+      - aftertone-data:/data
+      - ${AFTERTONE_BACKUP_HOST_DIR:-./backups}:/backups
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  aftertone-data:

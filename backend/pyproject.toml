@@ -4,18 +4,20 @@ version = "0.1.0"
 description = "Local music ratings journal API"
 requires-python = ">=3.13"
 dependencies = [
+  "argon2-cffi>=25.1,<26",
+  "defusedxml>=0.7.1,<1",
   "alembic>=1.14,<2",
-  "fastapi>=0.115,<1",
+  "fastapi>=0.141.1,<0.144",
   "httpx>=0.27,<1",
   "openpyxl>=3.1,<4",
-  "pillow>=11,<12",
+  "pillow>=12.3,<13",
   "python-multipart>=0.0.20,<1",
-  "sqlalchemy>=2.0,<3",
+  "sqlalchemy>=2.0.52,<2.1",
   "uvicorn[standard]>=0.32,<1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = ["pytest>=9.0.3,<10", "ruff>=0.14,<1", "pip-audit>=2.9,<3"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
@@ -23,3 +25,22 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+# Applied migrations are immutable historical artifacts.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
+# Preserve existing enum string behavior and Pydantic generic schema identity.
+ignore = ["UP042", "UP046"]
+# FastAPI dependencies are declarations, evaluated once by design.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+# These fixtures must set isolated paths before importing the application.
+"tests/api/test_albums.py" = ["E402"]
+"tests/test_musicbrainz.py" = ["E402"]

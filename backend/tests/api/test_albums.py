@@ -3,34 +3,87 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-from io import BytesIO
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 
-os.environ["AFTERTONE_DATABASE_URL"] = f"sqlite:///{Path(__file__).parent / 'aftertone-api-test.sqlite3'}"
+os.environ["AFTERTONE_DATABASE_URL"] = (
+    f"sqlite:///{Path(__file__).parent / 'aftertone-api-test.sqlite3'}"
+)
 TEST_COVER_DIR = Path(tempfile.mkdtemp(prefix="aftertone-cover-test-"))
 os.environ["AFTERTONE_COVER_DIR"] = str(TEST_COVER_DIR)
 
-import pytest
 import httpx
-from sqlalchemy import func, select
+import pytest
 from fastapi import HTTPException, UploadFile
-from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import ValidationError
+from sqlalchemy import func, select
 from starlette.datastructures import Headers
 
 from app.config import cover_dir
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import _text, commit_rows, preview_workbook
 from app.imports.pre_formula import PreFormulaError, legacy_adjustment_value, parse_pre_formula
-from app.main import album_facets, album_rating_summary, app, clear_revisit_mark, create_album, create_artist, create_revision, delete_artist, delete_artist_image, delete_cover, get_album, get_artist, get_revision, import_artist_image_from_url, import_cover_from_url, list_albums, list_artist_tracks, list_artists, list_favorite_songs, list_revisions, mark_for_revisit, search_tracks, update_album, update_artist, update_track_artists, upload_artist_image, upload_cover
+from app.main import (
+    album_facets,
+    album_rating_summary,
+    clear_revisit_mark,
+    create_album,
+    create_artist,
+    create_revision,
+    delete_artist,
+    delete_artist_image,
+    delete_cover,
+    get_album,
+    get_artist,
+    get_revision,
+    import_artist_image_from_url,
+    import_cover_from_url,
+    list_albums,
+    list_artist_tracks,
+    list_artists,
+    list_favorite_songs,
+    list_revisions,
+    mark_for_revisit,
+    search_tracks,
+    update_album,
+    update_artist,
+    update_track_artists,
+    upload_artist_image,
+    upload_cover,
+)
+from app.models.music import (
+    Album,
+    Artist,
+    FavoriteSongEntry,
+    LegacyRating,
+    RatingRevision,
+    Track,
+    TrackRatingRevision,
+)
 from app.ratings.calculator import TrackScore, calculate_rating
-from app.models.music import Album, Artist, FavoriteSongEntry, LegacyRating, RatingRevision, Track, TrackRatingRevision
-from app.schemas.music import AlbumCreate, ArtistCreate, ArtistUpdate, AlbumUpdate, CoverFromUrl, LegacyReconciliationRequest, LegacyTrackMapping, RatingRevisionCreate, RevisitUpdate, TrackCreditsUpdate, TrackUpdate
+from app.schemas.music import (
+    AlbumCreate,
+    AlbumUpdate,
+    ArtistCreate,
+    ArtistUpdate,
+    CoverFromUrl,
+    LegacyReconciliationRequest,
+    LegacyTrackMapping,
+    RatingRevisionCreate,
+    RevisitUpdate,
+    TrackCreditsUpdate,
+    TrackUpdate,
+)
+from app.services.covers import (
+    MAX_COVER_BYTES,
+    CoverError,
+    download_cover_from_url,
+    save_cover_data,
+)
 from app.services.legacy_reconciliation import ReconciliationError, reconcile_legacy_rating
-from app.services.covers import CoverError, MAX_COVER_BYTES, download_cover_from_url, save_cover_data
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +99,10 @@ def database() -> None:
 
 def album_payload(title: str = "Grace") -> dict[str, object]:
     return {
-        "title": title, "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album",
+        "title": title,
+        "artists": [{"name": "Jeff Buckley"}],
+        "year": 1994,
+        "release_type": "album",
         "tracks": [{"position": 2, "title": "Grace"}, {"position": 1, "title": "Mojo Pin"}],
     }
 
@@ -58,11 +114,24 @@ def create_test_album(title: str = "Grace"):
 
 def revision_payload(album) -> dict[str, object]:
     return {
-        "coherence": "7", "coherence_notes": "Cohesive sequencing.", "emotion": "10",
-        "emotion_notes": "Overwhelming.", "album_notes": "A complete note.",
+        "coherence": "7",
+        "coherence_notes": "Cohesive sequencing.",
+        "emotion": "10",
+        "emotion_notes": "Overwhelming.",
+        "album_notes": "A complete note.",
         "tracks": [
-            {"track_id": album.tracks[0].id, "score": "10", "include_in_pre_rating": True, "notes": "Opener."},
-            {"track_id": album.tracks[1].id, "score": "9", "include_in_pre_rating": False, "notes": "Title track."},
+            {
+                "track_id": album.tracks[0].id,
+                "score": "10",
+                "include_in_pre_rating": True,
+                "notes": "Opener.",
+            },
+            {
+                "track_id": album.tracks[1].id,
+                "score": "9",
+                "include_in_pre_rating": False,
+                "notes": "Title track.",
+            },
         ],
     }
 
@@ -71,7 +140,11 @@ def image_upload(image_format: str = "PNG", content_type: str = "image/png") -> 
     data = BytesIO()
     Image.new("RGB", (1600, 800), color="navy").save(data, format=image_format)
     data.seek(0)
-    return UploadFile(file=data, filename=f"cover.{image_format.lower()}", headers=Headers({"content-type": content_type}))
+    return UploadFile(
+        file=data,
+        filename=f"cover.{image_format.lower()}",
+        headers=Headers({"content-type": content_type}),
+    )
 
 
 def image_bytes(image_format: str) -> bytes:
@@ -81,7 +154,10 @@ def image_bytes(image_format: str) -> bytes:
 
 
 def public_dns(monkeypatch) -> None:
-    monkeypatch.setattr("app.services.covers.socket.getaddrinfo", lambda *_args, **_kwargs: [(None, None, None, None, ("93.184.216.34", 443))])
+    monkeypatch.setattr(
+        "app.services.covers.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(None, None, None, None, ("93.184.216.34", 443))],
+    )
 
 
 def test_create_get_and_list_albums_with_ordered_tracks() -> None:
@@ -100,21 +176,62 @@ def test_create_get_and_list_albums_with_ordered_tracks() -> None:
 def test_update_album_metadata_rejects_other_album_state() -> None:
     album = create_test_album()
     with SessionLocal() as session:
-        updated = update_album(album.id, AlbumUpdate(title="Grace (Remastered)", artists=[{"name": "Jeff Buckley"}], year=1995, release_type="ep"), session)
-    assert (updated.title, [artist.name for artist in updated.artists], updated.year, updated.release_type.value) == ("Grace (Remastered)", ["Jeff Buckley"], 1995, "ep")
+        updated = update_album(
+            album.id,
+            AlbumUpdate(
+                title="Grace (Remastered)",
+                artists=[{"name": "Jeff Buckley"}],
+                year=1995,
+                release_type="ep",
+            ),
+            session,
+        )
+    assert (
+        updated.title,
+        [artist.name for artist in updated.artists],
+        updated.year,
+        updated.release_type.value,
+    ) == ("Grace (Remastered)", ["Jeff Buckley"], 1995, "ep")
     with SessionLocal() as session, pytest.raises(HTTPException) as missing:
-        update_album(99999, AlbumUpdate(title="Missing", artists=[{"name": "Nobody"}], year=None, release_type="album"), session)
+        update_album(
+            99999,
+            AlbumUpdate(
+                title="Missing", artists=[{"name": "Nobody"}], year=None, release_type="album"
+            ),
+            session,
+        )
     assert missing.value.status_code == 404
     with pytest.raises(ValidationError):
-        AlbumUpdate.model_validate({"title": "Grace", "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album", "cover_filename": "not-allowed.webp"})
+        AlbumUpdate.model_validate(
+            {
+                "title": "Grace",
+                "artists": [{"name": "Jeff Buckley"}],
+                "year": 1994,
+                "release_type": "album",
+                "cover_filename": "not-allowed.webp",
+            }
+        )
     with pytest.raises(ValidationError):
-        AlbumUpdate.model_validate({"title": " ", "artists": [{"name": "Jeff Buckley"}], "year": 999, "release_type": "album"})
+        AlbumUpdate.model_validate(
+            {
+                "title": " ",
+                "artists": [{"name": "Jeff Buckley"}],
+                "year": 999,
+                "release_type": "album",
+            }
+        )
 
 
 def test_update_album_can_link_a_musicbrainz_release_only_once() -> None:
     album = create_test_album()
     other = create_test_album("Other")
-    payload = {"title": album.title, "artists": [{"name": "Jeff Buckley"}], "year": 1994, "release_type": "album", "musicbrainz_release_id": "a7b6d0f1-a1d8-4ddc-97d7-9fda31b5d6e4"}
+    payload = {
+        "title": album.title,
+        "artists": [{"name": "Jeff Buckley"}],
+        "year": 1994,
+        "release_type": "album",
+        "musicbrainz_release_id": "a7b6d0f1-a1d8-4ddc-97d7-9fda31b5d6e4",
+    }
     with SessionLocal() as session:
         updated = update_album(album.id, AlbumUpdate.model_validate(payload), session)
     assert updated.musicbrainz_release_id == payload["musicbrainz_release_id"]
@@ -127,12 +244,34 @@ def test_update_album_can_link_a_musicbrainz_release_only_once() -> None:
 def test_update_album_tracklist_reorders_renames_and_preserves_revision_snapshots() -> None:
     album = create_test_album()
     with SessionLocal() as session:
-        revision = create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        revision = create_revision(
+            album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session
+        )
         snapshots = [(item.track_id, item.title, item.position) for item in revision.tracks]
-        updated = update_album(album.id, AlbumUpdate(title=album.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", tracks=[TrackUpdate(id=album.tracks[1].id, title="Grace renamed"), TrackUpdate(id=album.tracks[0].id, title="Mojo Pin renamed"), TrackUpdate(title="New track")]), session)
+        updated = update_album(
+            album.id,
+            AlbumUpdate(
+                title=album.title,
+                artists=[{"name": "Jeff Buckley"}],
+                year=1994,
+                release_type="album",
+                tracks=[
+                    TrackUpdate(id=album.tracks[1].id, title="Grace renamed"),
+                    TrackUpdate(id=album.tracks[0].id, title="Mojo Pin renamed"),
+                    TrackUpdate(title="New track"),
+                ],
+            ),
+            session,
+        )
         stored_revision = get_revision(album.id, revision.id, session)
-    assert [(track.title, track.position) for track in updated.tracks] == [("Grace renamed", 1), ("Mojo Pin renamed", 2), ("New track", 3)]
-    assert [(item.track_id, item.title, item.position) for item in stored_revision.tracks] == snapshots
+    assert [(track.title, track.position) for track in updated.tracks] == [
+        ("Grace renamed", 1),
+        ("Mojo Pin renamed", 2),
+        ("New track", 3),
+    ]
+    assert [
+        (item.track_id, item.title, item.position) for item in stored_revision.tracks
+    ] == snapshots
 
 
 def test_album_list_includes_only_the_latest_revision_summary() -> None:
@@ -143,7 +282,9 @@ def test_album_list_includes_only_the_latest_revision_summary() -> None:
     second_data = revision_payload(album)
     second_data["emotion"] = "5"
     with SessionLocal() as session:
-        second = create_revision(album.id, RatingRevisionCreate.model_validate(second_data), session)
+        second = create_revision(
+            album.id, RatingRevisionCreate.model_validate(second_data), session
+        )
         latest = list_albums(session=session).items[0].latest_revision
     assert latest is not None
     assert latest.id == second.id
@@ -155,12 +296,20 @@ def test_album_list_includes_only_the_latest_revision_summary() -> None:
 def test_album_list_serializes_rating_decimals_as_json_numbers() -> None:
     album = create_test_album()
     with SessionLocal() as session:
-        create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
-        session.add(LegacyRating(
-            album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"),
-            extracted_scores=["10", "9"], pre_formula="=(10+9)/2",
-            legacy_final_rating=Decimal("8.5"), computed_final_rating=Decimal("8.75"),
-        ))
+        create_revision(
+            album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session
+        )
+        session.add(
+            LegacyRating(
+                album_id=album.id,
+                coherence=Decimal("7"),
+                emotion=Decimal("8"),
+                extracted_scores=["10", "9"],
+                pre_formula="=(10+9)/2",
+                legacy_final_rating=Decimal("8.5"),
+                computed_final_rating=Decimal("8.75"),
+            )
+        )
         session.commit()
     with SessionLocal() as session:
         payload = list_albums(session=session).items[0].model_dump(mode="json")
@@ -178,27 +327,42 @@ def test_album_artists_and_track_featured_credits_are_structured() -> None:
         assert [artist.name for artist in created.artists] == ["Primary Artist", "Second Artist"]
         inherited = get_album(created.id, session).tracks[0]
         assert inherited.uses_album_artists is True
-        assert [artist.name for artist in inherited.primary_artists] == ["Primary Artist", "Second Artist"]
-        featured = update_track_artists(inherited.id, TrackCreditsUpdate(featured_artist_ids=[created.artists[1].id]), session)
+        assert [artist.name for artist in inherited.primary_artists] == [
+            "Primary Artist",
+            "Second Artist",
+        ]
+        featured = update_track_artists(
+            inherited.id, TrackCreditsUpdate(featured_artist_ids=[created.artists[1].id]), session
+        )
         assert [artist.name for artist in featured.featured_artists] == ["Second Artist"]
         stored_album = session.get(Album, created.id)
         assert stored_album is not None
         stored_album.cover_filename = "grace.webp"
         session.commit()
-        create_revision(created.id, RatingRevisionCreate.model_validate(revision_payload(created)), session)
+        create_revision(
+            created.id, RatingRevisionCreate.model_validate(revision_payload(created)), session
+        )
         detail = get_artist(created.artists[1].id, session)
     assert [album.title for album in detail.albums] == ["Grace"]
     assert detail.albums[0].rating is not None
     assert [appearance.track_title for appearance in detail.featured_appearances] == ["Mojo Pin"]
     appearance = detail.featured_appearances[0]
-    assert (appearance.album_year, appearance.album_release_type.value, appearance.album_cover_url, appearance.track_position, appearance.score) == (1994, "album", "/media/covers/grace.webp", 1, Decimal("10"))
+    assert (
+        appearance.album_year,
+        appearance.album_release_type.value,
+        appearance.album_cover_url,
+        appearance.track_position,
+        appearance.score,
+    ) == (1994, "album", "/media/covers/grace.webp", 1, Decimal("10"))
 
 
 def test_featured_appearance_without_a_native_revision_has_no_track_score() -> None:
     album = create_test_album()
     with SessionLocal() as session:
         guest = create_artist(ArtistCreate(name="Guest"), session)
-        update_track_artists(album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[guest.id]), session)
+        update_track_artists(
+            album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[guest.id]), session
+        )
         detail = get_artist(guest.id, session)
     assert detail.albums == []
     assert len(detail.featured_appearances) == 1
@@ -206,48 +370,149 @@ def test_featured_appearance_without_a_native_revision_has_no_track_score() -> N
 
 
 def test_multi_disc_tracks_are_validated_and_ordered_by_disc_then_position() -> None:
-    payload = {**album_payload("Double album"), "disc_count": 2, "tracks": [
-        {"disc_number": 2, "position": 1, "title": "Disc two opener"},
-        {"disc_number": 1, "position": 2, "title": "Disc one closer"},
-        {"disc_number": 1, "position": 1, "title": "Disc one opener"},
-        {"disc_number": 2, "position": 2, "title": "Disc two closer"},
-    ]}
+    payload = {
+        **album_payload("Double album"),
+        "disc_count": 2,
+        "tracks": [
+            {"disc_number": 2, "position": 1, "title": "Disc two opener"},
+            {"disc_number": 1, "position": 2, "title": "Disc one closer"},
+            {"disc_number": 1, "position": 1, "title": "Disc one opener"},
+            {"disc_number": 2, "position": 2, "title": "Disc two closer"},
+        ],
+    }
     with SessionLocal() as session:
         created = create_album(AlbumCreate.model_validate(payload), session)
         found = get_album(created.id, session)
     assert found.disc_count == 2
-    assert [(track.disc_number, track.position, track.title) for track in found.tracks] == [(1, 1, "Disc one opener"), (1, 2, "Disc one closer"), (2, 1, "Disc two opener"), (2, 2, "Disc two closer")]
+    assert [(track.disc_number, track.position, track.title) for track in found.tracks] == [
+        (1, 1, "Disc one opener"),
+        (1, 2, "Disc one closer"),
+        (2, 1, "Disc two opener"),
+        (2, 2, "Disc two closer"),
+    ]
     with pytest.raises(ValidationError):
-        AlbumCreate.model_validate({**payload, "tracks": [{"disc_number": 1, "position": 1, "title": "One"}, {"disc_number": 1, "position": 1, "title": "Duplicate"}]})
+        AlbumCreate.model_validate(
+            {
+                **payload,
+                "tracks": [
+                    {"disc_number": 1, "position": 1, "title": "One"},
+                    {"disc_number": 1, "position": 1, "title": "Duplicate"},
+                ],
+            }
+        )
     with pytest.raises(ValidationError):
-        AlbumCreate.model_validate({**payload, "tracks": [{"disc_number": 3, "position": 1, "title": "Outside"}]})
+        AlbumCreate.model_validate(
+            {**payload, "tracks": [{"disc_number": 3, "position": 1, "title": "Outside"}]}
+        )
 
 
 def test_multi_disc_updates_preserve_tracks_and_reject_populated_disc_count_reduction() -> None:
-    payload = {**album_payload("Multi-disc edits"), "disc_count": 2, "tracks": [{"disc_number": 1, "position": 1, "title": "Disc one"}, {"disc_number": 2, "position": 1, "title": "Disc two"}]}
+    payload = {
+        **album_payload("Multi-disc edits"),
+        "disc_count": 2,
+        "tracks": [
+            {"disc_number": 1, "position": 1, "title": "Disc one"},
+            {"disc_number": 2, "position": 1, "title": "Disc two"},
+        ],
+    }
     with SessionLocal() as session:
         created = create_album(AlbumCreate.model_validate(payload), session)
-        increased = update_album(created.id, AlbumUpdate(title=created.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", disc_count=3), session)
-        assert [(track.disc_number, track.position) for track in increased.tracks] == [(1, 1), (2, 1)]
+        increased = update_album(
+            created.id,
+            AlbumUpdate(
+                title=created.title,
+                artists=[{"name": "Jeff Buckley"}],
+                year=1994,
+                release_type="album",
+                disc_count=3,
+            ),
+            session,
+        )
+        assert [(track.disc_number, track.position) for track in increased.tracks] == [
+            (1, 1),
+            (2, 1),
+        ]
         with pytest.raises(HTTPException, match="Cannot reduce disc count"):
-            update_album(created.id, AlbumUpdate(title=created.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", disc_count=1), session)
+            update_album(
+                created.id,
+                AlbumUpdate(
+                    title=created.title,
+                    artists=[{"name": "Jeff Buckley"}],
+                    year=1994,
+                    release_type="album",
+                    disc_count=1,
+                ),
+                session,
+            )
 
 
 def test_multi_disc_revision_snapshots_keep_their_disc_structure() -> None:
-    payload = {**album_payload("Snapshot discs"), "disc_count": 2, "tracks": [{"disc_number": 1, "position": 1, "title": "Disc one"}, {"disc_number": 2, "position": 1, "title": "Disc two"}]}
+    payload = {
+        **album_payload("Snapshot discs"),
+        "disc_count": 2,
+        "tracks": [
+            {"disc_number": 1, "position": 1, "title": "Disc one"},
+            {"disc_number": 2, "position": 1, "title": "Disc two"},
+        ],
+    }
     with SessionLocal() as session:
         album = create_album(AlbumCreate.model_validate(payload), session)
-        revision = create_revision(album.id, RatingRevisionCreate.model_validate({"coherence": 7, "emotion": 8, "tracks": [{"track_id": track.id, "score": 8, "include_in_pre_rating": True, "notes": None} for track in album.tracks]}), session)
-        updated = update_album(album.id, AlbumUpdate(title=album.title, artists=[{"name": "Jeff Buckley"}], year=1994, release_type="album", disc_count=2, tracks=[TrackUpdate(id=album.tracks[1].id, disc_number=1, title="Moved to disc one"), TrackUpdate(id=album.tracks[0].id, disc_number=2, title="Moved to disc two")]), session)
+        revision = create_revision(
+            album.id,
+            RatingRevisionCreate.model_validate(
+                {
+                    "coherence": 7,
+                    "emotion": 8,
+                    "tracks": [
+                        {
+                            "track_id": track.id,
+                            "score": 8,
+                            "include_in_pre_rating": True,
+                            "notes": None,
+                        }
+                        for track in album.tracks
+                    ],
+                }
+            ),
+            session,
+        )
+        updated = update_album(
+            album.id,
+            AlbumUpdate(
+                title=album.title,
+                artists=[{"name": "Jeff Buckley"}],
+                year=1994,
+                release_type="album",
+                disc_count=2,
+                tracks=[
+                    TrackUpdate(id=album.tracks[1].id, disc_number=1, title="Moved to disc one"),
+                    TrackUpdate(id=album.tracks[0].id, disc_number=2, title="Moved to disc two"),
+                ],
+            ),
+            session,
+        )
         stored = get_revision(album.id, revision.id, session)
     assert [(track.disc_number, track.position) for track in updated.tracks] == [(1, 1), (2, 1)]
-    assert [(track.disc_number, track.position, track.title) for track in stored.tracks] == [(1, 1, "Disc one"), (2, 1, "Disc two")]
+    assert [(track.disc_number, track.position, track.title) for track in stored.tracks] == [
+        (1, 1, "Disc one"),
+        (2, 1, "Disc two"),
+    ]
 
 
 def test_album_release_types_include_live_and_reissue() -> None:
     with SessionLocal() as session:
-        live = create_album(AlbumCreate.model_validate({**album_payload(), "title": "Live at the Sin-é", "release_type": "live"}), session)
-        reissue = create_album(AlbumCreate.model_validate({**album_payload(), "title": "Grace (Legacy Edition)", "release_type": "reissue"}), session)
+        live = create_album(
+            AlbumCreate.model_validate(
+                {**album_payload(), "title": "Live at the Sin-é", "release_type": "live"}
+            ),
+            session,
+        )
+        reissue = create_album(
+            AlbumCreate.model_validate(
+                {**album_payload(), "title": "Grace (Legacy Edition)", "release_type": "reissue"}
+            ),
+            session,
+        )
     assert live.release_type.value == "live"
     assert reissue.release_type.value == "reissue"
 
@@ -255,7 +520,9 @@ def test_album_release_types_include_live_and_reissue() -> None:
 def test_artist_projects_include_the_current_effective_rating() -> None:
     album = create_test_album()
     with SessionLocal() as session:
-        revision = create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        revision = create_revision(
+            album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session
+        )
         detail = get_artist(album.artists[0].id, session)
     assert detail.albums[0].rating == revision.final_rating
 
@@ -280,7 +547,15 @@ def test_artist_images_are_local_replacable_and_do_not_affect_projects() -> None
     assert second_filename != first_filename
     assert not (TEST_COVER_DIR / first_filename).exists()
     with SessionLocal() as session, pytest.raises(HTTPException) as invalid:
-        upload_artist_image(artist_id, UploadFile(file=BytesIO(b"not an image"), filename="bad.png", headers=Headers({"content-type": "image/png"})), session)
+        upload_artist_image(
+            artist_id,
+            UploadFile(
+                file=BytesIO(b"not an image"),
+                filename="bad.png",
+                headers=Headers({"content-type": "image/png"}),
+            ),
+            session,
+        )
     assert invalid.value.status_code == 422
     with SessionLocal() as session:
         removed = delete_artist_image(artist_id, session)
@@ -294,15 +569,26 @@ def test_artist_person_metadata_serializes_and_preserves_credits() -> None:
     album = create_test_album()
     artist_id = album.artists[0].id
     with SessionLocal() as session:
-        updated = update_artist(artist_id, ArtistUpdate(
-            name="Jeffrey Buckley", artist_type="person", country_code="US",
-            birth_date=date(1966, 11, 17), death_date=date(1997, 5, 29),
-            formed_year=None, dissolved_year=None,
-        ), session)
+        updated = update_artist(
+            artist_id,
+            ArtistUpdate(
+                name="Jeffrey Buckley",
+                artist_type="person",
+                country_code="US",
+                birth_date=date(1966, 11, 17),
+                death_date=date(1997, 5, 29),
+                formed_year=None,
+                dissolved_year=None,
+            ),
+            session,
+        )
         detail = get_artist(artist_id, session)
     assert updated.artist_type.value == "person"
     assert (detail.name, detail.country_code, detail.birth_date, detail.death_date) == (
-        "Jeffrey Buckley", "US", date(1966, 11, 17), date(1997, 5, 29),
+        "Jeffrey Buckley",
+        "US",
+        date(1966, 11, 17),
+        date(1997, 5, 29),
     )
     assert [project.id for project in detail.albums] == [album.id]
     assert detail.primary_track_count == 0
@@ -311,11 +597,24 @@ def test_artist_person_metadata_serializes_and_preserves_credits() -> None:
 def test_artist_group_metadata_and_type_specific_validation() -> None:
     with SessionLocal() as session:
         artist = create_artist(ArtistCreate(name="Daft Punk"), session)
-        group = update_artist(artist.id, ArtistUpdate(
-            artist_type="group", country_code="FR", formed_year=1993, dissolved_year=2021,
-            birth_date=None, death_date=None,
-        ), session)
-        assert (group.artist_type.value, group.country_code, group.formed_year, group.dissolved_year) == ("group", "FR", 1993, 2021)
+        group = update_artist(
+            artist.id,
+            ArtistUpdate(
+                artist_type="group",
+                country_code="FR",
+                formed_year=1993,
+                dissolved_year=2021,
+                birth_date=None,
+                death_date=None,
+            ),
+            session,
+        )
+        assert (
+            group.artist_type.value,
+            group.country_code,
+            group.formed_year,
+            group.dissolved_year,
+        ) == ("group", "FR", 1993, 2021)
         with pytest.raises(HTTPException, match="Dissolved year"):
             update_artist(artist.id, ArtistUpdate(dissolved_year=1990), session)
         with pytest.raises(HTTPException, match="Person dates"):
@@ -326,7 +625,17 @@ def test_artist_metadata_rejects_invalid_person_dates_and_normalized_name_duplic
     with SessionLocal() as session:
         first = create_artist(ArtistCreate(name="David Bowie"), session)
         second = create_artist(ArtistCreate(name="Different Artist"), session)
-        update_artist(first.id, ArtistUpdate(artist_type="person", birth_date=date(1947, 1, 8), death_date=None, formed_year=None, dissolved_year=None), session)
+        update_artist(
+            first.id,
+            ArtistUpdate(
+                artist_type="person",
+                birth_date=date(1947, 1, 8),
+                death_date=None,
+                formed_year=None,
+                dissolved_year=None,
+            ),
+            session,
+        )
         with pytest.raises(HTTPException, match="Death date"):
             update_artist(first.id, ArtistUpdate(death_date=date(1940, 1, 1)), session)
         with pytest.raises(HTTPException, match="already exists"):
@@ -340,17 +649,39 @@ def test_new_artists_default_to_unknown_type() -> None:
 
 
 def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
-    rows = [("Nineties", 2019, ["Alpha"]), ("First", 2020, ["Alpha", "Guest"]), ("Second", 2024, ["Beta"]), ("Last", 2029, ["Gamma"]), ("Future", 2030, ["Delta"]), ("Unknown", None, ["Unknown"])]
+    rows = [
+        ("Nineties", 2019, ["Alpha"]),
+        ("First", 2020, ["Alpha", "Guest"]),
+        ("Second", 2024, ["Beta"]),
+        ("Last", 2029, ["Gamma"]),
+        ("Future", 2030, ["Delta"]),
+        ("Unknown", None, ["Unknown"]),
+    ]
     with SessionLocal() as session:
         for title, year, artists in rows:
-            create_album(AlbumCreate.model_validate({"title": title, "artists": [{"name": artist} for artist in artists], "year": year, "release_type": "album", "tracks": [{"position": 1, "title": "Track"}]}), session)
+            create_album(
+                AlbumCreate.model_validate(
+                    {
+                        "title": title,
+                        "artists": [{"name": artist} for artist in artists],
+                        "year": year,
+                        "release_type": "album",
+                        "tracks": [{"position": 1, "title": "Track"}],
+                    }
+                ),
+                session,
+            )
         first = list_albums(page=1, page_size=2, sort="title", session=session)
         second = list_albums(page=2, page_size=2, sort="title", session=session)
         twenty_twenty = list_albums(decade=2020, page=1, page_size=10, sort="year", session=session)
         artist_search = list_albums(search="guest", session=session)
         empty = list_albums(page=99, page_size=2, session=session)
         facets = album_facets(session)
-    assert first.total == 6 and first.total_pages == 3 and [item.title for item in first.items] == ["First", "Future"]
+    assert (
+        first.total == 6
+        and first.total_pages == 3
+        and [item.title for item in first.items] == ["First", "Future"]
+    )
     assert [item.title for item in second.items] == ["Last", "Nineties"]
     assert [item.title for item in twenty_twenty.items] == ["Last", "Second", "First"]
     assert [item.title for item in artist_search.items] == ["First"]
@@ -360,14 +691,34 @@ def test_paginated_library_filters_searches_and_facets_before_slicing() -> None:
 
 def test_library_sorting_supports_both_directions_before_pagination_and_normalizes_text() -> None:
     with SessionLocal() as session:
-        def project(title: str, artist: str, year: int | None, score: str | None, rated_at: datetime | None = None):
-            album = create_album(AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}], "year": year}), session)
+
+        def project(
+            title: str,
+            artist: str,
+            year: int | None,
+            score: str | None,
+            rated_at: datetime | None = None,
+        ):
+            album = create_album(
+                AlbumCreate.model_validate(
+                    {**album_payload(title), "artists": [{"name": artist}], "year": year}
+                ),
+                session,
+            )
             if score is not None:
-                session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal(score), created_at=rated_at))
+                session.add(
+                    RatingRevision(
+                        album_id=album.id,
+                        coherence=Decimal("7"),
+                        emotion=Decimal("8"),
+                        final_rating=Decimal(score),
+                        created_at=rated_at,
+                    )
+                )
             return album
 
-        project("Zoé", "Zoé", 2024, "5", datetime(2025, 1, 1, tzinfo=timezone.utc))
-        project("Bravo", "Bravo", 2022, "9", datetime(2026, 1, 1, tzinfo=timezone.utc))
+        project("Zoé", "Zoé", 2024, "5", datetime(2025, 1, 1, tzinfo=UTC))
+        project("Bravo", "Bravo", 2022, "9", datetime(2026, 1, 1, tzinfo=UTC))
         project("Álbum", "Álvaro", 2020, None)
         project("Unrated", "Unrated", None, None)
         session.commit()
@@ -381,15 +732,27 @@ def test_library_sorting_supports_both_directions_before_pagination_and_normaliz
         artists_desc = list_albums(sort="artist", direction="desc", session=session)
         titles_asc = list_albums(sort="title", direction="asc", session=session)
         titles_desc = list_albums(sort="title", direction="desc", session=session)
-        second_page = list_albums(sort="rating", direction="desc", page=2, page_size=2, session=session)
+        second_page = list_albums(
+            sort="rating", direction="desc", page=2, page_size=2, session=session
+        )
 
     assert [item.title for item in rating_desc.items] == ["Bravo", "Zoé", "Álbum", "Unrated"]
     assert [item.title for item in rating_asc.items] == ["Zoé", "Bravo", "Álbum", "Unrated"]
     assert [item.title for item in date_desc.items] == ["Bravo", "Zoé", "Álbum", "Unrated"]
     assert [item.title for item in date_asc.items] == ["Zoé", "Bravo", "Álbum", "Unrated"]
     assert [item.title for item in year_asc.items] == ["Álbum", "Bravo", "Zoé", "Unrated"]
-    assert [item.artists[0].name for item in artists_asc.items] == ["Álvaro", "Bravo", "Unrated", "Zoé"]
-    assert [item.artists[0].name for item in artists_desc.items] == ["Zoé", "Unrated", "Bravo", "Álvaro"]
+    assert [item.artists[0].name for item in artists_asc.items] == [
+        "Álvaro",
+        "Bravo",
+        "Unrated",
+        "Zoé",
+    ]
+    assert [item.artists[0].name for item in artists_desc.items] == [
+        "Zoé",
+        "Unrated",
+        "Bravo",
+        "Álvaro",
+    ]
     assert [item.title for item in titles_asc.items] == ["Álbum", "Bravo", "Unrated", "Zoé"]
     assert [item.title for item in titles_desc.items] == ["Zoé", "Unrated", "Bravo", "Álbum"]
     assert [item.title for item in second_page.items] == ["Álbum", "Unrated"]
@@ -397,32 +760,71 @@ def test_library_sorting_supports_both_directions_before_pagination_and_normaliz
 
 def test_optional_release_date_preserves_year_only_records_and_filters_months() -> None:
     with SessionLocal() as session:
-        year_only = create_album(AlbumCreate.model_validate({**album_payload("Year only"), "year": 2026}), session)
-        february = create_album(AlbumCreate.model_validate({**album_payload("February"), "year": 2026, "release_date": "2026-02-27"}), session)
-        march = create_album(AlbumCreate.model_validate({**album_payload("March"), "year": 2026, "release_date": "2026-03-01"}), session)
+        year_only = create_album(
+            AlbumCreate.model_validate({**album_payload("Year only"), "year": 2026}), session
+        )
+        february = create_album(
+            AlbumCreate.model_validate(
+                {**album_payload("February"), "year": 2026, "release_date": "2026-02-27"}
+            ),
+            session,
+        )
+        create_album(
+            AlbumCreate.model_validate(
+                {**album_payload("March"), "year": 2026, "release_date": "2026-03-01"}
+            ),
+            session,
+        )
         session.commit()
-        february_rows = list_albums(year=2026, month=2, sort="year", direction="asc", session=session)
+        february_rows = list_albums(
+            year=2026, month=2, sort="year", direction="asc", session=session
+        )
         chronological = list_albums(year=2026, sort="year", direction="asc", session=session)
 
-        update_payload = {"title": "Year only", "artists": [{"name": "Jeff Buckley"}], "year": 2026, "release_type": "album", "disc_count": 1}
-        update_album(year_only.id, AlbumUpdate.model_validate({**update_payload, "release_date": "2026-01-02"}), session)
-        updated = update_album(year_only.id, AlbumUpdate.model_validate({**update_payload, "release_date": None}), session)
+        update_payload = {
+            "title": "Year only",
+            "artists": [{"name": "Jeff Buckley"}],
+            "year": 2026,
+            "release_type": "album",
+            "disc_count": 1,
+        }
+        update_album(
+            year_only.id,
+            AlbumUpdate.model_validate({**update_payload, "release_date": "2026-01-02"}),
+            session,
+        )
+        updated = update_album(
+            year_only.id,
+            AlbumUpdate.model_validate({**update_payload, "release_date": None}),
+            session,
+        )
 
     assert february.year == 2026 and february.release_date.isoformat() == "2026-02-27"
     assert [item.title for item in february_rows.items] == ["February"]
     assert [item.title for item in chronological.items] == ["February", "March", "Year only"]
     assert updated.year == 2026 and updated.release_date is None
     with pytest.raises(ValidationError, match="year must match release date"):
-        AlbumCreate.model_validate({**album_payload("Invalid"), "year": 2025, "release_date": "2026-02-27"})
+        AlbumCreate.model_validate(
+            {**album_payload("Invalid"), "year": 2025, "release_date": "2026-02-27"}
+        )
     with pytest.raises(ValidationError):
-        AlbumCreate.model_validate({**album_payload("Invalid calendar"), "release_date": "2026-02-30"})
+        AlbumCreate.model_validate(
+            {**album_payload("Invalid calendar"), "release_date": "2026-02-30"}
+        )
 
 
 def test_artist_detail_includes_optional_project_release_date() -> None:
     with SessionLocal() as session:
-        album = create_album(AlbumCreate.model_validate({
-            **album_payload("Dated project"), "year": 2026, "release_date": "2026-02-27",
-        }), session)
+        album = create_album(
+            AlbumCreate.model_validate(
+                {
+                    **album_payload("Dated project"),
+                    "year": 2026,
+                    "release_date": "2026-02-27",
+                }
+            ),
+            session,
+        )
         session.commit()
         detail = get_artist(album.artists[0].id, session)
 
@@ -430,21 +832,52 @@ def test_artist_detail_includes_optional_project_release_date() -> None:
     assert detail.albums[0].release_date == date(2026, 2, 27)
 
 
-def test_library_status_filters_use_current_revisit_and_effective_rating_before_pagination() -> None:
+def test_library_status_filters_use_current_revisit_and_effective_rating_before_pagination() -> (
+    None
+):
     with SessionLocal() as session:
-        revisit_native = create_album(AlbumCreate.model_validate({**album_payload("Revisit native"), "year": 2020}), session)
-        revisit_legacy = create_album(AlbumCreate.model_validate({**album_payload("Revisit legacy"), "year": 2021}), session)
-        zero = create_album(AlbumCreate.model_validate({**album_payload("Zero"), "year": 2021}), session)
-        revisit_unrated = create_album(AlbumCreate.model_validate({**album_payload("Revisit unrated"), "year": 2022}), session)
-        unrated = create_album(AlbumCreate.model_validate({**album_payload("Unrated"), "year": 2024}), session)
+        revisit_native = create_album(
+            AlbumCreate.model_validate({**album_payload("Revisit native"), "year": 2020}), session
+        )
+        revisit_legacy = create_album(
+            AlbumCreate.model_validate({**album_payload("Revisit legacy"), "year": 2021}), session
+        )
+        zero = create_album(
+            AlbumCreate.model_validate({**album_payload("Zero"), "year": 2021}), session
+        )
+        revisit_unrated = create_album(
+            AlbumCreate.model_validate({**album_payload("Revisit unrated"), "year": 2022}), session
+        )
+        create_album(
+            AlbumCreate.model_validate({**album_payload("Unrated"), "year": 2024}), session
+        )
         session.get(Album, revisit_native.id).needs_revisit = True
         session.get(Album, revisit_legacy.id).needs_revisit = True
         session.get(Album, revisit_unrated.id).needs_revisit = True
-        session.add_all([
-            RatingRevision(album_id=revisit_native.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("8.5")),
-            LegacyRating(album_id=revisit_legacy.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["7"], pre_formula="=(7)/1", computed_final_rating=Decimal("7.5")),
-            RatingRevision(album_id=zero.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("0")),
-        ])
+        session.add_all(
+            [
+                RatingRevision(
+                    album_id=revisit_native.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    final_rating=Decimal("8.5"),
+                ),
+                LegacyRating(
+                    album_id=revisit_legacy.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    extracted_scores=["7"],
+                    pre_formula="=(7)/1",
+                    computed_final_rating=Decimal("7.5"),
+                ),
+                RatingRevision(
+                    album_id=zero.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    final_rating=Decimal("0"),
+                ),
+            ]
+        )
         session.commit()
         revisit = list_albums(revisit=True, sort="title", session=session)
         only_unrated = list_albums(unrated=True, sort="title", session=session)
@@ -455,30 +888,74 @@ def test_library_status_filters_use_current_revisit_and_effective_rating_before_
         paged = list_albums(revisit=True, page=2, page_size=1, sort="title", session=session)
         revisit_summary = album_rating_summary(revisit=True, session=session)
 
-    assert [item.title for item in revisit.items] == ["Revisit legacy", "Revisit native", "Revisit unrated"]
+    assert [item.title for item in revisit.items] == [
+        "Revisit legacy",
+        "Revisit native",
+        "Revisit unrated",
+    ]
     assert [item.title for item in only_unrated.items] == ["Revisit unrated", "Unrated"]
     assert "Zero" not in [item.title for item in only_unrated.items]
     assert [item.title for item in both.items] == ["Revisit unrated"]
     assert [item.title for item in year_revisit.items] == ["Revisit native"]
     assert [item.title for item in decade_unrated.items] == ["Revisit unrated", "Unrated"]
     assert [item.title for item in searched.items] == ["Revisit legacy"]
-    assert paged.total == 3 and paged.total_pages == 3 and [item.title for item in paged.items] == ["Revisit native"]
+    assert (
+        paged.total == 3
+        and paged.total_pages == 3
+        and [item.title for item in paged.items] == ["Revisit native"]
+    )
     assert float(revisit_summary.average) == pytest.approx(8.0)
     assert revisit_summary.rated_count == 2
 
 
 def test_album_rating_summary_aggregates_effective_ratings_across_all_filter_matches() -> None:
     with SessionLocal() as session:
-        native = create_album(AlbumCreate.model_validate({**album_payload("Native"), "year": 2000}), session)
-        legacy = create_album(AlbumCreate.model_validate({**album_payload("Legacy"), "year": 2003}), session)
-        later = create_album(AlbumCreate.model_validate({**album_payload("Later"), "year": 2012}), session)
-        create_album(AlbumCreate.model_validate({**album_payload("Unrated"), "year": 2008}), session)
-        session.add_all([
-            RatingRevision(album_id=native.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("10.202")),
-            LegacyRating(album_id=native.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["1"], pre_formula="=(1)/1", computed_final_rating=Decimal("1")),
-            LegacyRating(album_id=legacy.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["9"], pre_formula="=(9)/1", computed_final_rating=Decimal("9.954")),
-            LegacyRating(album_id=later.id, coherence=Decimal("7"), emotion=Decimal("8"), extracted_scores=["8"], pre_formula="=(8)/1", computed_final_rating=Decimal("8.764")),
-        ])
+        native = create_album(
+            AlbumCreate.model_validate({**album_payload("Native"), "year": 2000}), session
+        )
+        legacy = create_album(
+            AlbumCreate.model_validate({**album_payload("Legacy"), "year": 2003}), session
+        )
+        later = create_album(
+            AlbumCreate.model_validate({**album_payload("Later"), "year": 2012}), session
+        )
+        create_album(
+            AlbumCreate.model_validate({**album_payload("Unrated"), "year": 2008}), session
+        )
+        session.add_all(
+            [
+                RatingRevision(
+                    album_id=native.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    final_rating=Decimal("10.202"),
+                ),
+                LegacyRating(
+                    album_id=native.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    extracted_scores=["1"],
+                    pre_formula="=(1)/1",
+                    computed_final_rating=Decimal("1"),
+                ),
+                LegacyRating(
+                    album_id=legacy.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    extracted_scores=["9"],
+                    pre_formula="=(9)/1",
+                    computed_final_rating=Decimal("9.954"),
+                ),
+                LegacyRating(
+                    album_id=later.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    extracted_scores=["8"],
+                    pre_formula="=(8)/1",
+                    computed_final_rating=Decimal("8.764"),
+                ),
+            ]
+        )
         session.commit()
         all_years = album_rating_summary(session=session)
         two_thousands = album_rating_summary(decade=2000, session=session)
@@ -502,7 +979,18 @@ def test_album_rating_summary_aggregates_effective_ratings_across_all_filter_mat
 def test_artist_pagination_search_and_ordering() -> None:
     with SessionLocal() as session:
         for name in ["Zulu", "Alpha", "Beta"]:
-            create_album(AlbumCreate.model_validate({"title": f"{name} album", "artists": [{"name": name}], "year": 2020, "release_type": "album", "tracks": [{"position": 1, "title": "Track"}]}), session)
+            create_album(
+                AlbumCreate.model_validate(
+                    {
+                        "title": f"{name} album",
+                        "artists": [{"name": name}],
+                        "year": 2020,
+                        "release_type": "album",
+                        "tracks": [{"position": 1, "title": "Track"}],
+                    }
+                ),
+                session,
+            )
         first = list_artists(page=1, page_size=2, session=session)
         searched = list_artists(search="et", session=session)
         empty = list_artists(page=9, page_size=2, session=session)
@@ -514,16 +1002,44 @@ def test_artist_pagination_search_and_ordering() -> None:
 
 def test_catalogue_search_normalizes_accents_and_apostrophes() -> None:
     with SessionLocal() as session:
-        album = create_album(AlbumCreate.model_validate({
-            **album_payload("Álbum de Álvaro"), "artists": [{"name": "Álvaro Díaz"}],
-            "tracks": [{"position": 1, "title": "Don’t Dream It’s Over"}],
-        }), session)
-        session.add(FavoriteSongEntry(track_id=album.tracks[0].id, base_score=Decimal("8"), emotional_connection=Decimal("4"), replay_value=Decimal("4"), originality=Decimal("4"), final_score=Decimal("9")))
+        album = create_album(
+            AlbumCreate.model_validate(
+                {
+                    **album_payload("Álbum de Álvaro"),
+                    "artists": [{"name": "Álvaro Díaz"}],
+                    "tracks": [{"position": 1, "title": "Don’t Dream It’s Over"}],
+                }
+            ),
+            session,
+        )
+        session.add(
+            FavoriteSongEntry(
+                track_id=album.tracks[0].id,
+                base_score=Decimal("8"),
+                emotional_connection=Decimal("4"),
+                replay_value=Decimal("4"),
+                originality=Decimal("4"),
+                final_score=Decimal("9"),
+            )
+        )
         session.commit()
 
-        artist_names = {query: [artist.name for artist in list_artists(search=query, sort="name", page=1, page_size=10, session=session).items] for query in ["alvaro", "álvaro", "varo"]}
-        favorite_matches = {query: [entry.track_id for entry in list_favorite_songs(search=query, session=session)] for query in ["dont dream", "don't dream", "alvaro", "album de alvaro"]}
-        add_song_matches = [track.track_id for track in search_tracks("dont dream its", session=session)]
+        artist_names = {
+            query: [
+                artist.name
+                for artist in list_artists(
+                    search=query, sort="name", page=1, page_size=10, session=session
+                ).items
+            ]
+            for query in ["alvaro", "álvaro", "varo"]
+        }
+        favorite_matches = {
+            query: [entry.track_id for entry in list_favorite_songs(search=query, session=session)]
+            for query in ["dont dream", "don't dream", "alvaro", "album de alvaro"]
+        }
+        add_song_matches = [
+            track.track_id for track in search_tracks("dont dream its", session=session)
+        ]
 
     assert all(names == ["Álvaro Díaz"] for names in artist_names.values())
     assert all(matches == [album.tracks[0].id] for matches in favorite_matches.values())
@@ -533,40 +1049,120 @@ def test_catalogue_search_normalizes_accents_and_apostrophes() -> None:
 def test_artist_list_includes_primary_project_breakdown_and_average_only() -> None:
     with SessionLocal() as session:
         albums = [
-            create_album(AlbumCreate.model_validate({**album_payload("Album one"), "artists": [{"name": "Denzel"}], "release_type": "album"}), session),
-            create_album(AlbumCreate.model_validate({**album_payload("Album two"), "artists": [{"name": "Denzel"}], "release_type": "album"}), session),
-            create_album(AlbumCreate.model_validate({**album_payload("EP"), "artists": [{"name": "Denzel"}], "release_type": "ep"}), session),
-            create_album(AlbumCreate.model_validate({**album_payload("Mixtape"), "artists": [{"name": "Denzel"}], "release_type": "mixtape"}), session),
+            create_album(
+                AlbumCreate.model_validate(
+                    {
+                        **album_payload("Album one"),
+                        "artists": [{"name": "Denzel"}],
+                        "release_type": "album",
+                    }
+                ),
+                session,
+            ),
+            create_album(
+                AlbumCreate.model_validate(
+                    {
+                        **album_payload("Album two"),
+                        "artists": [{"name": "Denzel"}],
+                        "release_type": "album",
+                    }
+                ),
+                session,
+            ),
+            create_album(
+                AlbumCreate.model_validate(
+                    {**album_payload("EP"), "artists": [{"name": "Denzel"}], "release_type": "ep"}
+                ),
+                session,
+            ),
+            create_album(
+                AlbumCreate.model_validate(
+                    {
+                        **album_payload("Mixtape"),
+                        "artists": [{"name": "Denzel"}],
+                        "release_type": "mixtape",
+                    }
+                ),
+                session,
+            ),
         ]
-        session.add_all([
-            RatingRevision(album_id=albums[0].id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("8")),
-            RatingRevision(album_id=albums[2].id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("6")),
-        ])
-        featured_album = create_album(AlbumCreate.model_validate({**album_payload("Elsewhere"), "artists": [{"name": "Other"}]}), session)
-        update_track_artists(featured_album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[albums[0].artists[0].id]), session)
+        session.add_all(
+            [
+                RatingRevision(
+                    album_id=albums[0].id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    final_rating=Decimal("8"),
+                ),
+                RatingRevision(
+                    album_id=albums[2].id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    final_rating=Decimal("6"),
+                ),
+            ]
+        )
+        featured_album = create_album(
+            AlbumCreate.model_validate(
+                {**album_payload("Elsewhere"), "artists": [{"name": "Other"}]}
+            ),
+            session,
+        )
+        update_track_artists(
+            featured_album.tracks[0].id,
+            TrackCreditsUpdate(featured_artist_ids=[albums[0].artists[0].id]),
+            session,
+        )
         session.commit()
         denzel = list_artists(search="denzel", session=session).items[0]
 
-    assert denzel.project_counts == {"album": 2, "ep": 1, "mixtape": 1, "compilation": 0, "live": 0, "reissue": 0, "single": 0, "soundtrack": 0, "unknown": 0}
+    assert denzel.project_counts == {
+        "album": 2,
+        "ep": 1,
+        "mixtape": 1,
+        "compilation": 0,
+        "live": 0,
+        "reissue": 0,
+        "single": 0,
+        "soundtrack": 0,
+        "unknown": 0,
+    }
     assert denzel.rated_project_count == 2
     assert denzel.average_rating == Decimal("7")
 
 
 def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
     with SessionLocal() as session:
+
         def project(artist: str, title: str, score: str | None = None, release_type: str = "album"):
-            album = create_album(AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}], "release_type": release_type}), session)
+            album = create_album(
+                AlbumCreate.model_validate(
+                    {
+                        **album_payload(title),
+                        "artists": [{"name": artist}],
+                        "release_type": release_type,
+                    }
+                ),
+                session,
+            )
             if score is not None:
-                session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal(score)))
+                session.add(
+                    RatingRevision(
+                        album_id=album.id,
+                        coherence=Decimal("7"),
+                        emotion=Decimal("8"),
+                        final_rating=Decimal(score),
+                    )
+                )
             return album
 
         aaron = project("Aaron", "Aaron album", "9")
         project("Zulu", "Zulu album", "9")
-        alpha = project("Alpha", "Alpha album", "8")
+        project("Alpha", "Alpha album", "8")
         project("Alpha", "Alpha EP", None, "ep")
         project("Bravo", "Bravo album", "3")
         project("No rating A", "No rating A album")
-        no_rating_z = project("No rating Z", "No rating Z album")
+        project("No rating Z", "No rating Z album")
         update_artist(aaron.artists[0].id, ArtistUpdate(is_active=False), session)
         session.commit()
 
@@ -577,7 +1173,14 @@ def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
         inactive = list_artists(active=False, sort="rating", session=session)
 
     assert [artist.name for artist in rating.items] == ["Aaron", "Zulu"]
-    assert [artist.name for artist in all_ratings.items] == ["Aaron", "Zulu", "Alpha", "Bravo", "No rating A", "No rating Z"]
+    assert [artist.name for artist in all_ratings.items] == [
+        "Aaron",
+        "Zulu",
+        "Alpha",
+        "Bravo",
+        "No rating A",
+        "No rating Z",
+    ]
     assert projects.items[0].name == "Alpha" and projects.items[0].album_count == 2
     assert [artist.name for artist in searched.items][:2] == ["Alpha", "Aaron"]
     assert [artist.name for artist in inactive.items] == ["Aaron"]
@@ -585,10 +1188,21 @@ def test_artist_list_sorts_ratings_and_projects_before_pagination() -> None:
 
 def test_artist_list_supports_bidirectional_sorting_with_unrated_last() -> None:
     with SessionLocal() as session:
+
         def project(artist: str, title: str, score: str | None = None):
-            album = create_album(AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}]}), session)
+            album = create_album(
+                AlbumCreate.model_validate({**album_payload(title), "artists": [{"name": artist}]}),
+                session,
+            )
             if score is not None:
-                session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal(score)))
+                session.add(
+                    RatingRevision(
+                        album_id=album.id,
+                        coherence=Decimal("7"),
+                        emotion=Decimal("8"),
+                        final_rating=Decimal(score),
+                    )
+                )
 
         project("Alpha", "Alpha one", "9")
         project("Alpha", "Alpha two")
@@ -600,7 +1214,9 @@ def test_artist_list_supports_bidirectional_sorting_with_unrated_last() -> None:
         name_desc = list_artists(sort="name", direction="desc", session=session)
         projects_asc = list_artists(sort="projects", direction="asc", session=session)
         projects_desc = list_artists(sort="projects", direction="desc", session=session)
-        first_rating_page = list_artists(sort="rating", direction="asc", page=1, page_size=1, session=session)
+        first_rating_page = list_artists(
+            sort="rating", direction="asc", page=1, page_size=1, session=session
+        )
 
     assert [artist.name for artist in rating_desc.items] == ["Alpha", "Bravo", "No rating"]
     assert [artist.name for artist in rating_asc.items] == ["Bravo", "Alpha", "No rating"]
@@ -613,12 +1229,26 @@ def test_artist_list_supports_bidirectional_sorting_with_unrated_last() -> None:
 def test_artist_list_sorts_names_and_tie_breakers_without_diacritics() -> None:
     with SessionLocal() as session:
         for name in ["Álvaro", "Ariana", "Bravo", "Zoé"]:
-            album = create_album(AlbumCreate.model_validate({**album_payload(f"{name} album"), "artists": [{"name": name}]}), session)
-            session.add(RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("8")))
+            album = create_album(
+                AlbumCreate.model_validate(
+                    {**album_payload(f"{name} album"), "artists": [{"name": name}]}
+                ),
+                session,
+            )
+            session.add(
+                RatingRevision(
+                    album_id=album.id,
+                    coherence=Decimal("7"),
+                    emotion=Decimal("8"),
+                    final_rating=Decimal("8"),
+                )
+            )
         session.commit()
         names = [artist.name for artist in list_artists(sort="name", session=session).items]
         rating_ties = [artist.name for artist in list_artists(sort="rating", session=session).items]
-        project_ties = [artist.name for artist in list_artists(sort="projects", session=session).items]
+        project_ties = [
+            artist.name for artist in list_artists(sort="projects", session=session).items
+        ]
 
     assert names == ["Álvaro", "Ariana", "Bravo", "Zoé"]
     assert rating_ties == names
@@ -627,21 +1257,53 @@ def test_artist_list_sorts_names_and_tie_breakers_without_diacritics() -> None:
 
 def test_artist_list_primary_and_featuring_scopes_are_distinct() -> None:
     with SessionLocal() as session:
-        create_album(AlbumCreate.model_validate({**album_payload("Primary album"), "artists": [{"name": "Primary artist"}]}), session)
-        create_album(AlbumCreate.model_validate({**album_payload("Primary EP"), "artists": [{"name": "Primary artist"}], "release_type": "ep"}), session)
-        featured_album = create_album(AlbumCreate.model_validate({**album_payload("Featured album"), "artists": [{"name": "Host artist"}]}), session)
+        create_album(
+            AlbumCreate.model_validate(
+                {**album_payload("Primary album"), "artists": [{"name": "Primary artist"}]}
+            ),
+            session,
+        )
+        create_album(
+            AlbumCreate.model_validate(
+                {
+                    **album_payload("Primary EP"),
+                    "artists": [{"name": "Primary artist"}],
+                    "release_type": "ep",
+                }
+            ),
+            session,
+        )
+        featured_album = create_album(
+            AlbumCreate.model_validate(
+                {**album_payload("Featured album"), "artists": [{"name": "Host artist"}]}
+            ),
+            session,
+        )
         featuring_only = create_artist(ArtistCreate(name="Featuring only"), session)
         both = create_artist(ArtistCreate(name="Both credits"), session)
-        update_track_artists(featured_album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[featuring_only.id, both.id]), session)
-        create_album(AlbumCreate.model_validate({**album_payload("Both album"), "artists": [{"name": "Both credits"}]}), session)
-        unused = create_artist(ArtistCreate(name="Unused artist"), session)
+        update_track_artists(
+            featured_album.tracks[0].id,
+            TrackCreditsUpdate(featured_artist_ids=[featuring_only.id, both.id]),
+            session,
+        )
+        create_album(
+            AlbumCreate.model_validate(
+                {**album_payload("Both album"), "artists": [{"name": "Both credits"}]}
+            ),
+            session,
+        )
+        create_artist(ArtistCreate(name="Unused artist"), session)
         session.commit()
         primary_rows = list_artists(scope="primary", sort="projects", session=session)
         featuring_rows = list_artists(scope="featuring", session=session)
         searched = list_artists(search="primary", scope="primary", session=session)
         unused_rows = list_artists(unused=True, session=session)
 
-    assert [artist.name for artist in primary_rows.items] == ["Primary artist", "Both credits", "Host artist"]
+    assert [artist.name for artist in primary_rows.items] == [
+        "Primary artist",
+        "Both credits",
+        "Host artist",
+    ]
     assert [artist.name for artist in featuring_rows.items] == ["Featuring only"]
     assert [artist.name for artist in searched.items] == ["Primary artist"]
     assert [artist.name for artist in unused_rows.items] == ["Unused artist"]
@@ -649,33 +1311,95 @@ def test_artist_list_primary_and_featuring_scopes_are_distinct() -> None:
 
 def test_artist_tracks_use_latest_native_scores_and_primary_credit_inheritance() -> None:
     with SessionLocal() as session:
-        album = create_album(AlbumCreate.model_validate({
-            **album_payload("Primary album"), "artists": [{"name": "Primary artist"}], "year": 2025,
-            "release_date": "2025-11-20", "tracks": [{"position": 1, "title": "First"}, {"position": 2, "title": "Second"}],
-        }), session)
-        older = RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("7"))
-        session.add(older); session.flush()
-        session.add_all([
-            TrackRatingRevision(rating_revision_id=older.id, track_id=album.tracks[0].id, track_title="First", track_position=1, score=Decimal("9"), include_in_pre_rating=True),
-            TrackRatingRevision(rating_revision_id=older.id, track_id=album.tracks[1].id, track_title="Second", track_position=2, score=Decimal("8"), include_in_pre_rating=True),
-        ])
-        latest = RatingRevision(album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"), final_rating=Decimal("7"))
-        session.add(latest); session.flush()
-        session.add_all([
-            TrackRatingRevision(rating_revision_id=latest.id, track_id=album.tracks[0].id, track_title="First", track_position=1, score=Decimal("0"), include_in_pre_rating=False),
-            TrackRatingRevision(rating_revision_id=latest.id, track_id=album.tracks[1].id, track_title="Second", track_position=2, score=Decimal("8.5"), include_in_pre_rating=True),
-        ])
+        album = create_album(
+            AlbumCreate.model_validate(
+                {
+                    **album_payload("Primary album"),
+                    "artists": [{"name": "Primary artist"}],
+                    "year": 2025,
+                    "release_date": "2025-11-20",
+                    "tracks": [
+                        {"position": 1, "title": "First"},
+                        {"position": 2, "title": "Second"},
+                    ],
+                }
+            ),
+            session,
+        )
+        older = RatingRevision(
+            album_id=album.id,
+            coherence=Decimal("7"),
+            emotion=Decimal("8"),
+            final_rating=Decimal("7"),
+        )
+        session.add(older)
+        session.flush()
+        session.add_all(
+            [
+                TrackRatingRevision(
+                    rating_revision_id=older.id,
+                    track_id=album.tracks[0].id,
+                    track_title="First",
+                    track_position=1,
+                    score=Decimal("9"),
+                    include_in_pre_rating=True,
+                ),
+                TrackRatingRevision(
+                    rating_revision_id=older.id,
+                    track_id=album.tracks[1].id,
+                    track_title="Second",
+                    track_position=2,
+                    score=Decimal("8"),
+                    include_in_pre_rating=True,
+                ),
+            ]
+        )
+        latest = RatingRevision(
+            album_id=album.id,
+            coherence=Decimal("7"),
+            emotion=Decimal("8"),
+            final_rating=Decimal("7"),
+        )
+        session.add(latest)
+        session.flush()
+        session.add_all(
+            [
+                TrackRatingRevision(
+                    rating_revision_id=latest.id,
+                    track_id=album.tracks[0].id,
+                    track_title="First",
+                    track_position=1,
+                    score=Decimal("0"),
+                    include_in_pre_rating=False,
+                ),
+                TrackRatingRevision(
+                    rating_revision_id=latest.id,
+                    track_id=album.tracks[1].id,
+                    track_title="Second",
+                    track_position=2,
+                    score=Decimal("8.5"),
+                    include_in_pre_rating=True,
+                ),
+            ]
+        )
         guest = create_artist(ArtistCreate(name="Featured guest"), session)
-        update_track_artists(album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[guest.id]), session)
+        update_track_artists(
+            album.tracks[0].id, TrackCreditsUpdate(featured_artist_ids=[guest.id]), session
+        )
         session.commit()
         artist_id = album.artists[0].id
-        tracks = list_artist_tracks(artist_id, page_size=1, sort="rating", direction="desc", session=session)
+        tracks = list_artist_tracks(
+            artist_id, page_size=1, sort="rating", direction="desc", session=session
+        )
         all_tracks = list_artist_tracks(artist_id, sort="rating", direction="asc", session=session)
         searched = list_artist_tracks(artist_id, search="primary album", session=session)
         featured = list_artist_tracks(guest.id, session=session)
 
     assert [track.title for track in tracks.items] == ["Second"] and tracks.total == 2
-    assert [(track.title, track.score) for track in all_tracks.items] == [("First", Decimal("0")), ("Second", Decimal("8.5"))]
+    assert [(track.title, track.score) for track in all_tracks.items] == [
+        ("First", Decimal("0")),
+        ("Second", Decimal("8.5")),
+    ]
     assert [track.title for track in searched.items] == ["Second", "First"]
     assert featured.total == 0
 
@@ -723,8 +1447,16 @@ def test_artists_with_primary_or_featured_track_credits_cannot_be_deleted() -> N
     with SessionLocal() as session:
         primary = create_artist(ArtistCreate(name="Primary"), session)
         featured = create_artist(ArtistCreate(name="Featured"), session)
-        update_track_artists(album.tracks[0].id, TrackCreditsUpdate(primary_artist_ids=[primary.id], featured_artist_ids=[]), session)
-        update_track_artists(album.tracks[1].id, TrackCreditsUpdate(primary_artist_ids=[], featured_artist_ids=[featured.id]), session)
+        update_track_artists(
+            album.tracks[0].id,
+            TrackCreditsUpdate(primary_artist_ids=[primary.id], featured_artist_ids=[]),
+            session,
+        )
+        update_track_artists(
+            album.tracks[1].id,
+            TrackCreditsUpdate(primary_artist_ids=[], featured_artist_ids=[featured.id]),
+            session,
+        )
         with pytest.raises(HTTPException) as primary_blocked:
             delete_artist(primary.id, session)
         with pytest.raises(HTTPException) as featured_blocked:
@@ -738,7 +1470,7 @@ def test_artist_active_state_preserves_existing_relationships_and_unused_filter(
     with SessionLocal() as session:
         used = album.artists[0]
         inactive = create_artist(ArtistCreate(name="Inactive unused"), session)
-        active = create_artist(ArtistCreate(name="Active unused"), session)
+        create_artist(ArtistCreate(name="Active unused"), session)
         deactivated = update_artist(used.id, ArtistUpdate(is_active=False), session)
         assert deactivated.is_active is False
         assert get_album(album.id, session).artists[0].is_active is False
@@ -757,8 +1489,11 @@ def test_create_and_read_complete_calculated_revision() -> None:
     payload = RatingRevisionCreate.model_validate(revision_payload(album))
     with SessionLocal() as session:
         revision = create_revision(album.id, payload, session)
-        expected = calculate_rating([TrackScore(Decimal("10"), True), TrackScore(Decimal("9"), False)],
-                                    coherence=Decimal("7"), emotion=Decimal("10"))
+        expected = calculate_rating(
+            [TrackScore(Decimal("10"), True), TrackScore(Decimal("9"), False)],
+            coherence=Decimal("7"),
+            emotion=Decimal("10"),
+        )
         assert revision.pre_rating == expected.pre_rating
         assert revision.bad_experience == expected.bad_experience
         assert revision.final_rating == expected.final_rating
@@ -776,7 +1511,9 @@ def test_create_and_read_complete_calculated_revision() -> None:
     for track in no_pre_payload["tracks"]:
         track["include_in_pre_rating"] = False
     with SessionLocal() as session:
-        no_pre_revision = create_revision(album.id, RatingRevisionCreate.model_validate(no_pre_payload), session)
+        no_pre_revision = create_revision(
+            album.id, RatingRevisionCreate.model_validate(no_pre_payload), session
+        )
         assert no_pre_revision.id != revision.id
         assert no_pre_revision.pre_rating is None
         assert no_pre_revision.bad_experience is None
@@ -784,8 +1521,10 @@ def test_create_and_read_complete_calculated_revision() -> None:
         assert len(list_revisions(album.id, session)) == 2
 
 
-@pytest.mark.parametrize(("field", "value"), [("coherence", "10.1"), ("coherence", "-0.1"),
-                                                   ("emotion", "10.1"), ("emotion", "-0.1")])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("coherence", "10.1"), ("coherence", "-0.1"), ("emotion", "10.1"), ("emotion", "-0.1")],
+)
 def test_revision_rejects_out_of_range_album_scores(field: str, value: str) -> None:
     album = create_test_album()
     payload = revision_payload(album)
@@ -841,7 +1580,9 @@ def test_revision_allows_unrated_excluded_track_and_preserves_null_score() -> No
     zero_payload = revision_payload(album)
     zero_payload["tracks"][1]["score"] = "0"
     with SessionLocal() as session:
-        zero_revision = create_revision(album.id, RatingRevisionCreate.model_validate(zero_payload), session)
+        zero_revision = create_revision(
+            album.id, RatingRevisionCreate.model_validate(zero_payload), session
+        )
     assert zero_revision.tracks[1].score == Decimal("0")
     assert zero_revision.tracks[1].score != revision.tracks[1].score
 
@@ -856,14 +1597,19 @@ def test_revision_and_album_not_found_or_mismatched_path() -> None:
     assert missing_album.value.status_code == 404
     album = create_test_album()
     with SessionLocal() as session:
-        revision = create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        revision = create_revision(
+            album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session
+        )
     other_album = create_test_album("Sketches")
     with SessionLocal() as session, pytest.raises(HTTPException) as wrong_album:
         get_revision(other_album.id, revision.id, session)
     assert wrong_album.value.status_code == 404
 
 
-@pytest.mark.parametrize(("image_format", "content_type"), [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")])
+@pytest.mark.parametrize(
+    ("image_format", "content_type"),
+    [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")],
+)
 def test_upload_cover_normalizes_supported_images(image_format: str, content_type: str) -> None:
     album = create_test_album()
     with SessionLocal() as session:
@@ -879,11 +1625,19 @@ def test_upload_cover_normalizes_supported_images(image_format: str, content_typ
 
 def test_cover_upload_rejects_invalid_content_and_missing_album() -> None:
     album = create_test_album()
-    invalid_type = UploadFile(file=BytesIO(b"not an image"), filename="cover.txt", headers=Headers({"content-type": "text/plain"}))
+    invalid_type = UploadFile(
+        file=BytesIO(b"not an image"),
+        filename="cover.txt",
+        headers=Headers({"content-type": "text/plain"}),
+    )
     with SessionLocal() as session, pytest.raises(HTTPException) as invalid:
         upload_cover(album.id, invalid_type, session)
     assert invalid.value.status_code == 422
-    corrupt_image = UploadFile(file=BytesIO(b"not an image"), filename="cover.png", headers=Headers({"content-type": "image/png"}))
+    corrupt_image = UploadFile(
+        file=BytesIO(b"not an image"),
+        filename="cover.png",
+        headers=Headers({"content-type": "image/png"}),
+    )
     with SessionLocal() as session, pytest.raises(HTTPException) as corrupt:
         upload_cover(album.id, corrupt_image, session)
     assert corrupt.value.status_code == 422
@@ -895,17 +1649,30 @@ def test_cover_upload_rejects_invalid_content_and_missing_album() -> None:
 def test_cover_upload_rejects_oversized_file() -> None:
     album = create_test_album()
     oversized = UploadFile(
-        file=BytesIO(b"x" * (10 * 1024 * 1024 + 1)), filename="cover.png", headers=Headers({"content-type": "image/png"})
+        file=BytesIO(b"x" * (10 * 1024 * 1024 + 1)),
+        filename="cover.png",
+        headers=Headers({"content-type": "image/png"}),
     )
     with SessionLocal() as session, pytest.raises(HTTPException) as error:
         upload_cover(album.id, oversized, session)
     assert error.value.status_code == 413
 
 
-@pytest.mark.parametrize(("image_format", "content_type"), [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")])
-def test_download_cover_from_public_url_uses_local_cover_pipeline(monkeypatch, image_format: str, content_type: str) -> None:
+@pytest.mark.parametrize(
+    ("image_format", "content_type"),
+    [("JPEG", "image/jpeg"), ("PNG", "image/png"), ("WEBP", "image/webp")],
+)
+def test_download_cover_from_public_url_uses_local_cover_pipeline(
+    monkeypatch, image_format: str, content_type: str
+) -> None:
     public_dns(monkeypatch)
-    client = httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, headers={"content-type": content_type}, content=image_bytes(image_format))))
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200, headers={"content-type": content_type}, content=image_bytes(image_format)
+            )
+        )
+    )
     try:
         filename = download_cover_from_url("https://covers.example/album", client)
     finally:
@@ -918,20 +1685,30 @@ def test_download_cover_from_public_url_uses_local_cover_pipeline(monkeypatch, i
 def test_download_cover_url_rejects_unsafe_and_invalid_responses(monkeypatch) -> None:
     with pytest.raises(CoverError, match="http or https"):
         download_cover_from_url("file:///tmp/cover.jpg")
-    monkeypatch.setattr("app.services.covers.socket.getaddrinfo", lambda *_args, **_kwargs: [(None, None, None, None, ("127.0.0.1", 80))])
+    monkeypatch.setattr(
+        "app.services.covers.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(None, None, None, None, ("127.0.0.1", 80))],
+    )
     with pytest.raises(CoverError, match="local or private"):
         download_cover_from_url("http://localhost/cover.jpg")
-    monkeypatch.setattr("app.services.covers.socket.getaddrinfo", lambda *_args, **_kwargs: [(None, None, None, None, ("10.0.0.5", 80))])
+    monkeypatch.setattr(
+        "app.services.covers.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(None, None, None, None, ("10.0.0.5", 80))],
+    )
     with pytest.raises(CoverError, match="local or private"):
         download_cover_from_url("http://10.0.0.5/cover.jpg")
     public_dns(monkeypatch)
     cases = [
         httpx.Response(200, headers={"content-type": "text/html"}, content=b"not an image"),
         httpx.Response(200, headers={"content-type": "image/jpeg"}, content=b"corrupt"),
-        httpx.Response(200, headers={"content-type": "image/jpeg", "content-length": str(MAX_COVER_BYTES + 1)}),
+        httpx.Response(
+            200, headers={"content-type": "image/jpeg", "content-length": str(MAX_COVER_BYTES + 1)}
+        ),
     ]
     for response in cases:
-        client = httpx.Client(transport=httpx.MockTransport(lambda _request, result=response: result))
+        client = httpx.Client(
+            transport=httpx.MockTransport(lambda _request, result=response: result)
+        )
         try:
             with pytest.raises(CoverError):
                 download_cover_from_url("https://covers.example/album", client)
@@ -942,9 +1719,23 @@ def test_download_cover_url_rejects_unsafe_and_invalid_responses(monkeypatch) ->
 def test_download_cover_url_revalidates_redirect_destinations(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.covers.socket.getaddrinfo",
-        lambda host, *_args, **_kwargs: [(None, None, None, None, (("127.0.0.1" if host == "localhost" else "93.184.216.34"), 80))],
+        lambda host, *_args, **_kwargs: [
+            (
+                None,
+                None,
+                None,
+                None,
+                (("127.0.0.1" if host == "localhost" else "93.184.216.34"), 80),
+            )
+        ],
     )
-    client = httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(302, headers={"location": "http://localhost/private.jpg"})))
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                302, headers={"location": "http://localhost/private.jpg"}
+            )
+        )
+    )
     try:
         with pytest.raises(CoverError, match="local or private"):
             download_cover_from_url("https://covers.example/album", client)
@@ -962,7 +1753,9 @@ def test_import_cover_from_url_replaces_existing_cover(monkeypatch) -> None:
         stored.cover_filename = first_filename
         session.commit()
         monkeypatch.setattr("app.main.download_cover_from_url", lambda _url: second_filename)
-        response = import_cover_from_url(album.id, CoverFromUrl(url="https://covers.example/replacement.jpg"), session)
+        response = import_cover_from_url(
+            album.id, CoverFromUrl(url="https://covers.example/replacement.jpg"), session
+        )
     assert response.cover_url is not None
     assert not (cover_dir() / first_filename).exists()
     assert (cover_dir() / second_filename).is_file()
@@ -977,14 +1770,23 @@ def test_import_artist_image_from_url_reuses_safe_replacement_pipeline(monkeypat
         session.get(Artist, artist_id).image_filename = first_filename
         session.commit()
         monkeypatch.setattr("app.main.download_cover_from_url", lambda _url: second_filename)
-        imported = import_artist_image_from_url(artist_id, CoverFromUrl(url="https://covers.example/artist.jpg"), session)
+        imported = import_artist_image_from_url(
+            artist_id, CoverFromUrl(url="https://covers.example/artist.jpg"), session
+        )
     assert imported.image_url == f"/media/covers/{second_filename}"
     assert not (cover_dir() / first_filename).exists()
     assert (cover_dir() / second_filename).is_file()
     with SessionLocal() as session:
-        monkeypatch.setattr("app.main.download_cover_from_url", lambda _url: (_ for _ in ()).throw(CoverError("Cover URL did not return a JPEG, PNG, or WebP image.")))
+        monkeypatch.setattr(
+            "app.main.download_cover_from_url",
+            lambda _url: (_ for _ in ()).throw(
+                CoverError("Cover URL did not return a JPEG, PNG, or WebP image.")
+            ),
+        )
         with pytest.raises(HTTPException) as error:
-            import_artist_image_from_url(artist_id, CoverFromUrl(url="https://covers.example/bad.jpg"), session)
+            import_artist_image_from_url(
+                artist_id, CoverFromUrl(url="https://covers.example/bad.jpg"), session
+            )
         assert session.get(Artist, artist_id).image_filename == second_filename
     assert error.value.status_code == 422
     assert (cover_dir() / second_filename).is_file()
@@ -1015,9 +1817,19 @@ def test_legacy_pre_formula_parses_decimal_comma_and_audits_grace() -> None:
     assert len(scores) == 11
     assert suffix == ""
     zero_scores, zero_denominator, zero_suffix = parse_pre_formula("=(10+9.5+8)/3+0-0")
-    assert (zero_scores, zero_denominator, zero_suffix) == ([Decimal("10"), Decimal("9.5"), Decimal("8")], 3, "+0-0")
-    positive_scores, positive_denominator, positive_suffix = parse_pre_formula("=(10+9,5+8)/3+0,1-0")
-    assert (positive_scores, positive_denominator, positive_suffix) == ([Decimal("10"), Decimal("9.5"), Decimal("8")], 3, "+0,1-0")
+    assert (zero_scores, zero_denominator, zero_suffix) == (
+        [Decimal("10"), Decimal("9.5"), Decimal("8")],
+        3,
+        "+0-0",
+    )
+    positive_scores, positive_denominator, positive_suffix = parse_pre_formula(
+        "=(10+9,5+8)/3+0,1-0"
+    )
+    assert (positive_scores, positive_denominator, positive_suffix) == (
+        [Decimal("10"), Decimal("9.5"), Decimal("8")],
+        3,
+        "+0,1-0",
+    )
     assert legacy_adjustment_value(positive_suffix) == Decimal("0.1")
     with pytest.raises(PreFormulaError):
         parse_pre_formula("=AVERAGE(10,9)")
@@ -1028,10 +1840,24 @@ def test_legacy_pre_formula_parses_decimal_comma_and_audits_grace() -> None:
 def test_legacy_preview_marks_audit_discrepancies_as_warnings() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
-    sheet.append(["ÁLBUM", "ARTISTA", "AÑO", "CALIFICACIÓN", None, "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(
+        [
+            "ÁLBUM",
+            "ARTISTA",
+            "AÑO",
+            "CALIFICACIÓN",
+            None,
+            "PRE-CALIFICACIÓN",
+            "COHERENCIA",
+            "MALA EXP",
+            "EMOCIÓN",
+        ]
+    )
     sheet.append(["Grace", "Jeff Buckley", 1994, "=F2+0.1", None, "=(10+4)/2", 7, 0, 10])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         preview = preview_workbook(data.getvalue(), session)
         imported, skipped, failed = commit_rows(preview, {2}, session)
@@ -1041,20 +1867,43 @@ def test_legacy_preview_marks_audit_discrepancies_as_warnings() -> None:
     assert legacy is not None
     assert preview[0].legacy_final_rating is None
     assert legacy.legacy_final_rating is None
-    assert preview[0].computed_final_rating == calculate_rating(
-        [TrackScore(Decimal("10")), TrackScore(Decimal("4"))], coherence=Decimal("7"), emotion=Decimal("10")
-    ).final_rating
+    assert (
+        preview[0].computed_final_rating
+        == calculate_rating(
+            [TrackScore(Decimal("10")), TrackScore(Decimal("4"))],
+            coherence=Decimal("7"),
+            emotion=Decimal("10"),
+        ).final_rating
+    )
     assert any("Legacy bad experience differs" in warning for warning in preview[0].warnings)
 
 
 def test_legacy_preview_accepts_post_average_adjustments_without_using_them() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "EMOCIÓN"])
-    sheet.append(["Comfort y Música Para Volar [Live]", "Soda Stereo", "=(10+9.6+8.3+10+10+9.5+10+8.1+8.7+8.4+8.1)/11+0-0", 7, 10])
-    sheet.append(["Soviet Kitsch", "Regina Spektor", "=(8.3+7.5+9.2+9.9+8.7+8.9+8.8+8.9+9.1+8.6)/10+0.1-0", 7, 10])
-    data = BytesIO(); workbook.save(data)
+    sheet.append(
+        [
+            "Comfort y Música Para Volar [Live]",
+            "Soda Stereo",
+            "=(10+9.6+8.3+10+10+9.5+10+8.1+8.7+8.4+8.1)/11+0-0",
+            7,
+            10,
+        ]
+    )
+    sheet.append(
+        [
+            "Soviet Kitsch",
+            "Regina Spektor",
+            "=(8.3+7.5+9.2+9.9+8.7+8.9+8.8+8.9+9.1+8.6)/10+0.1-0",
+            7,
+            10,
+        ]
+    )
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         preview = preview_workbook(data.getvalue(), session)
     neutral, adjusted = preview
@@ -1070,11 +1919,13 @@ def test_legacy_preview_accepts_post_average_adjustments_without_using_them() ->
 def test_legacy_preview_uses_scores_when_pre_denominator_does_not_match() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "EMOCIÓN"])
     sheet.append(["SMITHEREENS", "Joji", "=(9.4+6.8+9.3+7.5+6.6+5.5+4.1+6.5+5.4)/8+0-0.25", 7, 8])
     sheet.append(["Temporada de reggaetón", "Bad Bunny", "=(7.2+1.8+4.2+8.2+8.1+6.2+5)/6", 7, 8])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         preview = preview_workbook(data.getvalue(), session)
     smithereens, temporada = preview
@@ -1082,13 +1933,19 @@ def test_legacy_preview_uses_scores_when_pre_denominator_does_not_match() -> Non
     assert smithereens.status == "warning"
     assert smithereens.computed_pre_rating == sum(smithereens.extracted_scores) / Decimal("9")
     assert smithereens.computed_final_rating is not None
-    assert any("denominator (8) differs from extracted score count (9)" in warning for warning in smithereens.warnings)
+    assert any(
+        "denominator (8) differs from extracted score count (9)" in warning
+        for warning in smithereens.warnings
+    )
     assert any("manual adjustment (-0.25)" in warning for warning in smithereens.warnings)
     assert len(temporada.extracted_scores) == 7
     assert temporada.status == "warning"
     assert temporada.computed_pre_rating == sum(temporada.extracted_scores) / Decimal("7")
     assert temporada.computed_final_rating is not None
-    assert any("denominator (6) differs from extracted score count (7)" in warning for warning in temporada.warnings)
+    assert any(
+        "denominator (6) differs from extracted score count (7)" in warning
+        for warning in temporada.warnings
+    )
 
 
 def test_legacy_pre_formula_rejects_out_of_range_scores() -> None:
@@ -1099,10 +1956,12 @@ def test_legacy_pre_formula_rejects_out_of_range_scores() -> None:
 def test_legacy_commit_creates_no_tracks_or_rating_revision() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "EMOCIÓN"])
     sheet.append(["Legacy Album", "Legacy Artist", "=(10+9.5)/2", 7, 8])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         rows = preview_workbook(data.getvalue(), session)
         imported, skipped, failed = commit_rows(rows, {2}, session)
@@ -1114,9 +1973,14 @@ def test_legacy_commit_creates_no_tracks_or_rating_revision() -> None:
     assert legacy is not None
     assert legacy.extracted_scores == ["10", "9.5"]
     assert legacy.legacy_final_rating is None
-    assert legacy.computed_final_rating == calculate_rating(
-        [TrackScore(Decimal("10")), TrackScore(Decimal("9.5"))], coherence=Decimal("7"), emotion=Decimal("8")
-    ).final_rating
+    assert (
+        legacy.computed_final_rating
+        == calculate_rating(
+            [TrackScore(Decimal("10")), TrackScore(Decimal("9.5"))],
+            coherence=Decimal("7"),
+            emotion=Decimal("8"),
+        ).final_rating
+    )
     assert album is not None
     assert track_count == 0
     assert revision_count == 0
@@ -1125,10 +1989,14 @@ def test_legacy_commit_creates_no_tracks_or_rating_revision() -> None:
 def test_legacy_unrated_album_creates_only_an_album_and_respects_duplicates() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
-    sheet.append(["ÁLBUM", "ARTISTA", "AÑO", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(
+        ["ÁLBUM", "ARTISTA", "AÑO", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"]
+    )
     sheet.append(["Entertainment", "Gang Of Four", 1979, None, None, None, None])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         rows = preview_workbook(data.getvalue(), session)
         imported, skipped, failed = commit_rows(rows, {2}, session)
@@ -1146,35 +2014,49 @@ def test_legacy_unrated_album_creates_only_an_album_and_respects_duplicates() ->
     assert duplicate_result == (0, 1, 0)
 
 
-@pytest.mark.parametrize(("title", "expected_status"), [(0, "unrated"), (0.0, "unrated"), ("0", "unrated"), (None, "error"), ("   ", "error")])
-def test_legacy_title_normalization_preserves_numeric_zero(title: object, expected_status: str) -> None:
+@pytest.mark.parametrize(
+    ("title", "expected_status"),
+    [(0, "unrated"), (0.0, "unrated"), ("0", "unrated"), (None, "error"), ("   ", "error")],
+)
+def test_legacy_title_normalization_preserves_numeric_zero(
+    title: object, expected_status: str
+) -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
     sheet.append([title, "Ichiko Aoba", None, None, None, None])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         row = preview_workbook(data.getvalue(), session)[0]
     assert row.status == expected_status
     if expected_status == "unrated":
         assert row.title == "0"
     else:
-            assert any("Album and artist are required" in error for error in row.errors)
+        assert any("Album and artist are required" in error for error in row.errors)
 
 
-@pytest.mark.parametrize(("value", "expected"), [(0.0, "0"), (12.0, "12"), (1.5, "1.5"), ("0", "0"), (None, None), ("   ", None)])
-def test_legacy_text_normalization_removes_only_integer_float_suffix(value: object, expected: str | None) -> None:
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(0.0, "0"), (12.0, "12"), (1.5, "1.5"), ("0", "0"), (None, None), ("   ", None)],
+)
+def test_legacy_text_normalization_removes_only_integer_float_suffix(
+    value: object, expected: str | None
+) -> None:
     assert _text(value) == expected
 
 
 def test_legacy_partial_rating_is_not_classified_as_unrated() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
     sheet.append(["Partial", "Artist", "=(10+9)/2", None, None, 8])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         row = preview_workbook(data.getvalue(), session)[0]
     assert row.status == "error"
@@ -1184,10 +2066,12 @@ def test_legacy_partial_rating_is_not_classified_as_unrated() -> None:
 def test_legacy_preview_computes_grace_final_from_pre_formula_without_final_column() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
     sheet.append(["Grace", "Jeff Buckley", "=(10+10+10+10+10+10+10+10+9.5+10+10)/11", 7, 0, 10])
-    data = BytesIO(); workbook.save(data)
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         preview = preview_workbook(data.getvalue(), session)
     assert preview[0].computed_pre_rating == Decimal("9.954545454545454545454545455")
@@ -1198,10 +2082,21 @@ def test_legacy_preview_computes_grace_final_from_pre_formula_without_final_colu
 def test_legacy_audit_bad_experience_that_cannot_be_read_is_a_warning() -> None:
     from openpyxl import Workbook
 
-    workbook = Workbook(); sheet = workbook.active
+    workbook = Workbook()
+    sheet = workbook.active
     sheet.append(["ÁLBUM", "ARTISTA", "PRE-CALIFICACIÓN", "COHERENCIA", "MALA EXP", "EMOCIÓN"])
-    sheet.append(["Promises", "Floating Points", "=(9.7+8.7+7.3+8.4+9.8+7+6.2+6.6+9.9+8+9.8+8.1)/12", 7, "not cached", 9])
-    data = BytesIO(); workbook.save(data)
+    sheet.append(
+        [
+            "Promises",
+            "Floating Points",
+            "=(9.7+8.7+7.3+8.4+9.8+7+6.2+6.6+9.9+8+9.8+8.1)/12",
+            7,
+            "not cached",
+            9,
+        ]
+    )
+    data = BytesIO()
+    workbook.save(data)
     with SessionLocal() as session:
         preview = preview_workbook(data.getvalue(), session)
     row = preview[0]
@@ -1216,25 +2111,34 @@ def test_legacy_audit_bad_experience_that_cannot_be_read_is_a_warning() -> None:
 def test_revisit_mark_is_current_album_state_and_survives_new_revision() -> None:
     album = create_test_album()
     with SessionLocal() as session:
-        marked = mark_for_revisit(album.id, RevisitUpdate(reason="Revisit after release hype."), session)
+        marked = mark_for_revisit(
+            album.id, RevisitUpdate(reason="Revisit after release hype."), session
+        )
     assert marked.needs_revisit is True
     assert marked.revisit_reason == "Revisit after release hype."
     assert marked.revisit_marked_at is not None
     with SessionLocal() as session:
-        create_revision(album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session)
+        create_revision(
+            album.id, RatingRevisionCreate.model_validate(revision_payload(album)), session
+        )
         assert get_album(album.id, session).needs_revisit is True
         cleared = clear_revisit_mark(album.id, session)
     assert cleared.needs_revisit is False
     assert cleared.revisit_reason is None
 
 
-def test_legacy_reconciliation_requires_explicit_unique_mapping_and_preserves_unrated_tracks() -> None:
+def test_legacy_reconciliation_requires_explicit_unique_mapping_and_preserves_unrated_tracks() -> (
+    None
+):
     album = create_test_album()
     with SessionLocal() as session:
         third_track = Track(album_id=album.id, position=3, title="Last Goodbye")
         legacy = LegacyRating(
-            album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"),
-            extracted_scores=["10", "9.5"], pre_formula="=(10+9.5)/2",
+            album_id=album.id,
+            coherence=Decimal("7"),
+            emotion=Decimal("8"),
+            extracted_scores=["10", "9.5"],
+            pre_formula="=(10+9.5)/2",
         )
         session.add_all([third_track, legacy])
         session.commit()
@@ -1267,8 +2171,11 @@ def test_legacy_reconciliation_rejects_duplicate_track_or_missing_score_mapping(
     album = create_test_album()
     with SessionLocal() as session:
         legacy = LegacyRating(
-            album_id=album.id, coherence=Decimal("7"), emotion=Decimal("8"),
-            extracted_scores=["10", "9"], pre_formula="=(10+9)/2",
+            album_id=album.id,
+            coherence=Decimal("7"),
+            emotion=Decimal("8"),
+            extracted_scores=["10", "9"],
+            pre_formula="=(10+9)/2",
         )
         session.add(legacy)
         session.commit()
