@@ -7,6 +7,7 @@ import { addTrackToDisc, canUseDiscCount, moveTrackWithinDisc, parseTracklistTex
 import { ArtistSearchPicker } from "../artists/ArtistSearchPicker";
 import { MusicBrainzAlbumEnrichment } from "./MusicBrainzAlbumEnrichment";
 import { musicBrainzTracklist } from "./musicbrainz";
+import { useUnsavedNavigation } from "../../components/useUnsavedNavigation";
 
 const releaseTypes: ReleaseType[] = ["album", "soundtrack", "single", "unknown", "ep", "mixtape", "compilation", "live", "reissue"];
 type Credits = Record<number, { primary: Artist[]; featured: Artist[] }>;
@@ -33,6 +34,7 @@ export function EditAlbumPage({ albumId, onCancel, onSaved }: { albumId: number;
     setAlbum(loaded); setTitle(loaded.title); setArtists(loadedArtists); setYear(loadedYear); setReleaseDate(loadedReleaseDate); setReleaseType(loaded.release_type); setDiscCount(loaded.disc_count); setTracks(loadedTracks); setCredits(loadedCredits); setMusicBrainzReleaseId(loadedMusicBrainzReleaseId); setInitialDraft(draftFingerprint(loaded.title, loadedArtists, loadedYear, loadedReleaseDate, loaded.release_type, loaded.disc_count, loadedTracks, loadedCredits, loadedMusicBrainzReleaseId));
   }).catch((cause: Error) => setError(cause.message)).finally(() => setLoading(false)); }, [albumId]);
   const dirty = initialDraft !== null && initialDraft !== draftFingerprint(title, artists, year, releaseDate, releaseType, discCount, tracks, credits, musicBrainzReleaseId);
+  useUnsavedNavigation(dirty, "Discard unsaved album changes?");
   const cancel = () => { if (!dirty || window.confirm("Discard unsaved album changes?")) onCancel(); };
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [dirty]);
   const setTrackCredit = (trackId: number, kind: "primary" | "featured", selected: Artist[]) => setCredits((current) => ({ ...current, [trackId]: { ...current[trackId], [kind]: selected } }));

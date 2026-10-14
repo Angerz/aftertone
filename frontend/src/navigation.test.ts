@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { hasArtistDetailTabBack, hasInternalBack, initialAftertoneState, nextAftertoneState } from "./navigation";
+import { allowPageNavigation, beforeNavigationEvent, hasArtistDetailTabBack, hasInternalBack, initialAftertoneState, nextAftertoneState } from "./navigation";
+import { vi } from "vitest";
 
 describe("Aftertone history markers", () => {
   it("marks a direct entry without inventing a previous internal page", () => {
@@ -14,5 +15,17 @@ describe("Aftertone history markers", () => {
   it("marks tab transitions separately so contextual Back can restore prior tabs first", () => {
     expect(hasArtistDetailTabBack({ ...nextAftertoneState(null), artistDetailTab: true })).toBe(true);
     expect(hasArtistDetailTabBack(nextAftertoneState(null))).toBe(false);
+  });
+  it("allows an editor to cancel a global navigation without changing history", () => {
+    const events = new EventTarget();
+    vi.stubGlobal("window", events);
+    const cancel = (event: Event) => event.preventDefault();
+    try {
+      expect(allowPageNavigation()).toBe(true);
+      events.addEventListener(beforeNavigationEvent, cancel);
+      expect(allowPageNavigation()).toBe(false);
+      events.removeEventListener(beforeNavigationEvent, cancel);
+      expect(allowPageNavigation()).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
   });
 });

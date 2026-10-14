@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { onSessionExpired, request, setCsrfToken } from "../../api/client";
 import { initialAftertoneState, nextAftertoneState } from "../../navigation";
 import { EntryScreen } from "./EntryScreen";
+import { GlobalHeader } from "../../components/GlobalHeader";
 
 type Session = { authenticated: boolean; csrf_token: string | null };
 const OwnerContext = createContext(false);
@@ -53,12 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     finally { setBusy(false); }
   }
   return <OwnerContext.Provider value={owner}><SignInContext.Provider value={openSignIn}>
-    <header className="owner-access">
-      <a className="owner-access-brand" href="/" onClick={(event) => { event.preventDefault(); goTo("/"); }}>Aftertone</a>
+    <GlobalHeader onNavigate={(path) => goTo(path)}>
       {owner ? <button type="button" className="text-button" disabled={busy} onClick={signOut}>Sign out</button> : <button ref={signInTriggerRef} type="button" className="text-button" aria-expanded={showLogin} aria-controls="owner-sign-in" onClick={() => showLogin ? closeSignIn() : openSignIn()}>Owner sign in</button>}
-    </header>
+    </GlobalHeader>
     {error && <div className="owner-access-feedback"><p className="notice error" role="alert">{error}</p></div>}
     {showLogin && !owner ? <main className="page owner-sign-in"><form id="owner-sign-in" onSubmit={signIn}><p className="eyebrow">Aftertone · Owner access</p><h1>Owner sign in</h1><label>Password<input ref={passwordRef} type="password" autoComplete="current-password" maxLength={1024} required value={password} onChange={(event) => setPassword(event.target.value)} /></label><div className="owner-sign-in-actions"><button disabled={busy || !ready} type="submit">{busy ? "Signing in…" : "Sign in"}</button><button type="button" className="text-button" disabled={busy} onClick={closeSignIn}>Cancel</button></div></form></main>
-      : ready ? <div key={owner ? "owner" : "visitor"}>{children}</div> : <EntryScreen preparing onExplore={() => goTo("/library")} onSignIn={openSignIn} />}
+      : ready ? <div className="app-layout" key={owner ? "owner" : "visitor"}>{children}</div> : <EntryScreen preparing onExplore={() => goTo("/library")} onSignIn={openSignIn} />}
   </SignInContext.Provider></OwnerContext.Provider>;
 }

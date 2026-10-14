@@ -32,7 +32,7 @@ function TrackSearchResults({ tracks, onSelect }: { tracks: FavoriteSongTrackSea
   return <div className="favorite-track-results">{tracks.map((track) => <button className="favorite-search-result" key={track.track_id} disabled={track.already_ranked_position !== null} onClick={() => onSelect(track)}>{track.cover_url && <img src={mediaUrl(track.cover_url)} alt="" />}<span><strong>{track.track_title}</strong><small>{formatArtistNames(track.artists)} · {track.album_title} · {track.album_year ?? "—"}</small></span><em>{track.already_ranked_position ? `Already ranked · #${track.already_ranked_position}` : track.latest_track_score === null ? "Unrated" : `Current score ${track.latest_track_score}`}</em></button>)}</div>;
 }
 
-export function FavoriteSongsPage({ onBack }: { onBack: () => void }) {
+export function FavoriteSongsPage() {
   const [view, setView] = useState<"top" | "candidates">("top"); const [entries, setEntries] = useState<FavoriteSongEntry[]>([]); const [search, setSearch] = useState(""); const [sort, setSort] = useState<FavoriteSongSort>("position"); const [showTrackSearch, setShowTrackSearch] = useState(false); const [query, setQuery] = useState(""); const [tracks, setTracks] = useState<FavoriteSongTrackSearch[]>([]); const [selected, setSelected] = useState<FavoriteSongTrackSearch | null>(null); const [editing, setEditing] = useState<FavoriteSongEntry | null>(null); const [form, setForm] = useState<Form>(blank()); const [error, setError] = useState<string | null>(null); const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set()); const [reloadVersion, setReloadVersion] = useState(0); const [loadedView, setLoadedView] = useState<"top" | "candidates" | null>(null); const [loadedVersion, setLoadedVersion] = useState<number | null>(null); const [focusRequiredVersion, setFocusRequiredVersion] = useState<number | null>(null); const [focusEntryId, setFocusEntryId] = useState<number | null>(() => { const id = Number(new URLSearchParams(window.location.search).get("focus")); return Number.isInteger(id) && id > 0 ? id : null; }); const [highlightedEntryId, setHighlightedEntryId] = useState<number | null>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null); const trackPopoverRef = useRef<HTMLDivElement>(null); const trackInputRef = useRef<HTMLInputElement>(null); const focusViewsTried = useRef(new Set<"top" | "candidates">());
   const reload = () => setReloadVersion((version) => version + 1);
@@ -76,8 +76,6 @@ export function FavoriteSongsPage({ onBack }: { onBack: () => void }) {
   const displayedEntries = sortFavoriteSongs(entries, sort);
 
   return <main className="page favorite-songs">
-    <button className="back" onClick={onBack}>← Library</button>
-    <p className="eyebrow">Favorite songs</p>
     <h1>My favorite songs of all time.</h1>
     <div className="favorite-tabs" role="group" aria-label="Favorite-song ranking view">
       <button className={view === "top" ? "active" : ""} aria-pressed={view === "top"} onClick={() => setView("top")}>Top 100</button>

@@ -4,6 +4,12 @@ export function requiresOwner(view: View): boolean {
   return ["create", "import", "artist-edit", "reconcile", "edit", "rate"].includes(view.name);
 }
 
+export function activeSection(view: View): "library" | "artists" | "favorites" | null {
+  if (["artists", "artist", "artist-tracks", "artist-edit"].includes(view.name)) return "artists";
+  if (view.name === "top-songs") return "favorites";
+  return view.name === "landing" ? null : "library";
+}
+
 export function legacyLibraryQuery(search: string): boolean {
   const params = new URLSearchParams(search);
   return ["search", "sort", "direction", "page", "year", "decade", "month", "revisit", "unrated"].some((key) => params.has(key));
