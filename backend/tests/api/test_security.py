@@ -2,6 +2,7 @@
 
 import time
 from io import BytesIO
+from typing import get_args, get_origin
 from zipfile import ZipFile
 
 import pytest
@@ -9,7 +10,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.auth import OwnerSession, cookie_name, digest, password_hasher
+from app.auth import PUBLIC_READ_ROUTES, OwnerSession, cookie_name, digest, password_hasher
 from app.database import Base, SessionLocal, engine
 from app.imports.legacy_excel import preview_workbook
 from app.main import app
@@ -70,6 +71,36 @@ def test_every_administrative_route_rejects_anonymous_requests(client):
 )
 def test_public_reads(client, path):
     assert client.get(path).status_code == 200
+
+
+def test_new_get_routes_are_private_by_default(client):
+    @app.get("/api/security-test/private")
+    def private_probe():
+        return {"private": "synthetic"}
+
+    route = app.routes[-1]
+    # Test the API route before the production SPA fallback, if a build exists.
+    app.router.routes.remove(route)
+    app.router.routes.insert(0, route)
+    try:
+        assert client.get("/api/security-test/private").status_code == 401
+        sign_in(client)
+        assert client.get("/api/security-test/private").status_code == 200
+    finally:
+        app.router.routes.remove(route)
+
+
+def test_public_read_models_declare_explicit_field_projections():
+    for route in app.routes:
+        if (
+            isinstance(route, APIRoute)
+            and "GET" in route.methods
+            and route.path in PUBLIC_READ_ROUTES - {"/health", "/api/auth/session"}
+        ):
+            model = route.response_model
+            if get_origin(model) is list:
+                model = get_args(model)[0]
+            assert model._public_fields is not None, route.path
 
 
 def test_invalid_login_and_login_csrf(client):
@@ -214,10 +245,23 @@ def test_public_responses_strip_journal_text_in_nested_objects(client):
             f"/api/albums/{album_id}/revisions/{revision['id']}",
             "/api/favorite-songs",
             f"/api/favorite-songs/{favorite.json()['id']}",
+            "/api/artists",
+            f"/api/artists/{album['artists'][0]['id']}",
+            f"/api/artists/{album['artists'][0]['id']}/tracks",
         ]:
             response = public.get(path)
             assert response.status_code == 200, response.text
             assert "PRIVATE" not in response.text
+            assert response.headers["cache-control"].find("no-store") >= 0
+        public_artist = public.get(f"/api/artists/{album['artists'][0]['id']}").json()
+        assert not {"is_active", "is_unused", "normalized_name"} & public_artist.keys()
+        assert "created_at" not in public.get(f"/api/albums/{album_id}").json()
+        assert public.get("/api/auth/session").json() == {
+            "authenticated": False,
+            "csrf_token": None,
+        }
+        assert public.get("/api/legacy-ratings/1").status_code == 401
+        assert public.get("/api/metadata/musicbrainz/artists/search?query=test").status_code == 401
         assert (
             public.get(f"/api/albums/{album_id}/revisions/{revision['id']}").json()["tracks"][0][
                 "score"
@@ -228,6 +272,41 @@ def test_public_responses_strip_journal_text_in_nested_objects(client):
         client.get(f"/api/albums/{album_id}/revisions/{revision['id']}").json()["album_notes"]
         == "PRIVATE ALBUM"
     )
+    assert client.post("/api/auth/logout").status_code == 200
+    after_logout = client.get(f"/api/albums/{album_id}/revisions/{revision['id']}")
+    assert "PRIVATE" not in after_logout.text
+    assert client.post("/api/artists", json={"name": "Blocked after logout"}).status_code == 401
+
+
+def test_legacy_summary_exposes_ratings_without_import_administration(client):
+    from app.models.music import LegacyRating
+
+    sign_in(client)
+    album = client.post(
+        "/api/albums",
+        json={
+            "title": "Legacy",
+            "artists": [{"name": "Synthetic"}],
+            "tracks": [{"position": 1, "title": "One"}],
+        },
+    ).json()
+    with SessionLocal() as session:
+        session.add(
+            LegacyRating(
+                album_id=album["id"],
+                legacy_final_rating=8,
+                coherence=7,
+                emotion=8,
+                extracted_scores=["8"],
+                pre_formula="8",
+                reconciliation_status="pending",
+            )
+        )
+        session.commit()
+    with TestClient(app) as public:
+        summary = public.get(f"/api/albums/{album['id']}").json()["latest_legacy_rating"]
+        assert summary == {"legacy_final_rating": 8.0, "computed_final_rating": None}
+    assert "id" in client.get(f"/api/albums/{album['id']}").json()["latest_legacy_rating"]
 
 
 def test_real_anonymous_multipart_uploads_denied(client):
@@ -337,6 +416,13 @@ def test_anonymous_cannot_infer_private_revisit_state_from_filters(client, path)
     assert client.get(path).status_code == 401
     sign_in(client)
     assert client.get(path).status_code == 200
+
+
+@pytest.mark.parametrize("query", ["active=true", "active=false", "unused=true"])
+def test_artist_maintenance_filters_require_owner(client, query):
+    assert client.get(f"/api/artists?{query}").status_code == 401
+    sign_in(client)
+    assert client.get(f"/api/artists?{query}").status_code == 200
 
 
 def test_production_configuration_fails_closed(monkeypatch):

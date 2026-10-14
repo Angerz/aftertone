@@ -4,6 +4,12 @@ Aftertone is my local music journal: a private place for my listening history, m
 
 It supports local use and a controlled public deployment: visitors can browse music metadata and numeric ratings, while only the owner can edit. Written journal notes and revisit details remain private. See [production deployment](docs/production/deployment.md) before exposing it to the internet.
 
+The editorial entry page at `/` offers `Explore as guest` and owner sign-in. The
+catalogue lives at `/library`; guests can browse artists, albums, track catalogues
+and Favorite Songs with search, filters and sorting. Owner sessions restore all
+editing/import actions. See [public guest mode](docs/production/public-guest-mode.md)
+for the exact publication contract and privacy boundaries.
+
 ## Features
 
 - Visual album library with pagination, search, sorting, and year/decade filters.

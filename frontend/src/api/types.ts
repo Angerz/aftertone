@@ -14,10 +14,10 @@ export interface FavoriteSongEntry { id: number; global_position: number; track_
 export interface FavoriteSongWrite { track_id: number; base_score: number; emotional_connection: number; replay_value: number; originality: number; genre: string | null; notes: string | null }
 export interface FavoriteSongTrackSearch { track_id: number; track_title: string; artists: Artist[]; album_id: number; album_title: string; album_year: number | null; cover_url: string | null; latest_track_score: number | null; already_ranked_position: number | null }
 export interface LatestRevision { id: number; created_at: string; pre_rating: number | null; final_rating: number | null }
-export interface LatestLegacyRating { id: number; imported_at: string; legacy_final_rating: number | null; computed_final_rating: number | null; reconciliation_status: string }
+export interface LatestLegacyRating { id?: number; imported_at?: string; legacy_final_rating: number | null; computed_final_rating: number | null; reconciliation_status?: string }
 export interface Album {
   id: number; title: string; musicbrainz_release_id?: string | null; artists: Artist[]; year: number | null; release_date?: string | null;
-  release_type: ReleaseType; disc_count: number; created_at: string; tracks: Track[]; latest_revision: LatestRevision | null; cover_url: string | null; needs_revisit: boolean; revisit_reason: string | null; revisit_marked_at: string | null; latest_legacy_rating: LatestLegacyRating | null;
+  release_type: ReleaseType; disc_count: number; created_at?: string; tracks: Track[]; latest_revision: LatestRevision | null; cover_url: string | null; needs_revisit: boolean; revisit_reason: string | null; revisit_marked_at: string | null; latest_legacy_rating: LatestLegacyRating | null;
 }
 export interface TrackCreate { disc_number: number; position: number; title: string }
 export interface AlbumCreate { title: string; artists: ArtistCreditInput[]; year: number | null; release_date?: string | null; release_type: ReleaseType; disc_count: number; tracks: TrackCreate[] }

@@ -26,6 +26,25 @@ owner_context: ContextVar[bool] = ContextVar("owner_context", default=False)
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
+# Route templates, not arbitrary GET paths. New API routes are private by default.
+PUBLIC_READ_ROUTES = frozenset(
+    {
+        "/health",
+        "/api/auth/session",
+        "/api/albums",
+        "/api/albums/summary",
+        "/api/albums/facets",
+        "/api/albums/{album_id}",
+        "/api/albums/{album_id}/revisions",
+        "/api/albums/{album_id}/revisions/{revision_id}",
+        "/api/artists",
+        "/api/artists/{artist_id}",
+        "/api/artists/{artist_id}/tracks",
+        "/api/favorite-songs",
+        "/api/favorite-songs/{entry_id}",
+    }
+)
+
 
 class OwnerSession(Base):
     __tablename__ = "owner_sessions"
@@ -77,6 +96,23 @@ def current_owner(request: Request) -> bool:
 async def public_context(request: Request):
     # An async dependency sets context before FastAPI enters worker threads.
     authenticated = await run_in_threadpool(current_owner, request)
+    route = request.scope["route"].path
+    public_read = request.method == "GET" and route in PUBLIC_READ_ROUTES
+    login = request.method == "POST" and route == "/api/auth/login"
+    frontend = request.method == "GET" and route == "/{path:path}"
+    if not (public_read or login or frontend):
+        # Keep origin/CSRF enforcement for all writes, including future endpoints.
+        await run_in_threadpool(require_owner, request)
+    if (
+        not authenticated
+        and route == "/api/artists"
+        and (
+            "active" in request.query_params
+            or request.query_params.get("unused", "false").lower()
+            in {"true", "1", "on", "yes", "t", "y"}
+        )
+    ):
+        raise HTTPException(401, "Owner login required for artist maintenance filters.")
     if (
         not authenticated
         and request.url.path in {"/api/albums", "/api/albums/summary"}

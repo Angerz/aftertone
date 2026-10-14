@@ -34,4 +34,28 @@ describe("authenticated API transport", () => {
     await expect(request("/api/artists", { method: "POST", body: '{}' })).rejects.toEqual(new ApiError("Invalid CSRF token.", 403));
     expect(fetch).toHaveBeenCalledOnce(); expect(expired).not.toHaveBeenCalled(); unsubscribe();
   });
+  it("discards an owner response that completes after logout", async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    setCsrfToken("owner-session");
+    const pending = request("/api/albums/1/revisions/1");
+    setCsrfToken(null);
+    finish(new Response('{"album_notes":"PRIVATE"}'));
+    await expect(pending).rejects.toThrow("Your session changed");
+  });
+  it.each([
+    [503, "Owner login is not configured."],
+    [401, "Invalid credentials."],
+  ])("preserves login failure details for status %s without expiring a session", async (status, detail) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail }), { status })));
+    const expired = vi.fn(); const unsubscribe = onSessionExpired(expired);
+    try {
+      await expect(request("/api/auth/login", { method: "POST", body: '{"password":"synthetic-test-only"}' })).rejects.toEqual(new ApiError(detail, status));
+      expect(expired).not.toHaveBeenCalled();
+    } finally { unsubscribe(); }
+  });
+  it("distinguishes an unreachable API from login configuration errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(request("/api/auth/login", { method: "POST", body: '{"password":"synthetic-test-only"}' })).rejects.toEqual(new ApiError("Could not reach Aftertone. Please try again."));
+  });
 });

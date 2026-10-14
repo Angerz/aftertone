@@ -1,3 +1,4 @@
+import { initialAftertoneState, nextAftertoneState } from "../../navigation";
 import { OwnerOnly, useOwner } from "../auth/Auth";
 import { useEffect, useState } from "react";
 import { getAlbumFacets, getAlbumRatingSummary, listAlbums } from "../../api/albums";
@@ -30,11 +31,11 @@ export function AlbumsPage({ onCreate, onImport, onArtists, onTopSongs, onOpen }
   const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(true);
   useEffect(() => { getAlbumFacets().then(setFacets).catch((cause: Error) => setError(cause.message)); }, []);
   useEffect(() => { const onPopState = () => setNavigation(() => { const parsed = parseLibraryNavigation(); return { ...parsed, revisit: owner && parsed.revisit }; }); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, [owner]);
-  useEffect(() => { let active = true; setLoading(true); setError(null); listAlbums({ ...navigation, page_size: libraryPageSize }).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }).finally(() => { if (active) setLoading(false); }); const params = buildAlbumQueryParams(navigation); window.history.replaceState({}, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); return () => { active = false; }; }, [navigation]);
+  useEffect(() => { let active = true; setLoading(true); setError(null); listAlbums({ ...navigation, page_size: libraryPageSize }).then((value) => { if (active) setResult(value); }).catch((cause: Error) => { if (active) setError(cause.message); }).finally(() => { if (active) setLoading(false); }); const params = buildAlbumQueryParams(navigation); window.history.replaceState(initialAftertoneState(window.history.state), "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); return () => { active = false; }; }, [navigation]);
   const showSummary = shouldShowLibraryRatingSummary(navigation.search, navigation.unrated);
   useEffect(() => { if (!showSummary) { setSummary(null); setSummaryLoading(false); return; } let active = true; setSummary(null); setSummaryLoading(true); getAlbumRatingSummary({ decade: navigation.decade, year: navigation.year, month: navigation.month, revisit: navigation.revisit, unrated: navigation.unrated }).then((value) => { if (active) setSummary(value); }).catch((cause: Error) => { if (active) setError(cause.message); }).finally(() => { if (active) setSummaryLoading(false); }); return () => { active = false; }; }, [navigation.decade, navigation.year, navigation.month, navigation.revisit, navigation.unrated, showSummary]);
   const change = (next: Partial<LibraryNavigation>, resetPage = true) => setNavigation((current) => ({ ...current, ...next, page: resetPage ? 1 : next.page ?? current.page }));
-  const pushSortingNavigation = (next: LibraryNavigation) => { const params = buildAlbumQueryParams(next); window.history.pushState({}, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); setNavigation(next); };
+  const pushSortingNavigation = (next: LibraryNavigation) => { const params = buildAlbumQueryParams(next); window.history.pushState(nextAftertoneState(window.history.state), "", `${window.location.pathname}${params.size ? `?${params}` : ""}`); setNavigation(next); };
   const chooseSort = (sort: LibrarySort) => pushSortingNavigation({ ...navigation, sort, direction: defaultLibrarySortDirection(sort), page: 1 });
   const chooseDirection = (direction: LibrarySortDirection) => pushSortingNavigation({ ...navigation, direction, page: 1 });
   const decades = Object.keys(facets.decades).map(Number).sort((left, right) => left - right);

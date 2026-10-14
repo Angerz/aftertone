@@ -15,7 +15,7 @@ export function LegacyReconciliationPage({ albumId, onBack, onReconciled }: { al
   useEffect(() => {
     getAlbum(albumId).then(async (loaded) => {
       setAlbum(loaded); setTracklistText(loaded.tracks.map((track) => track.title).join("\n"));
-      if (!loaded.latest_legacy_rating) throw new Error("No legacy rating is available.");
+      if (!loaded.latest_legacy_rating || loaded.latest_legacy_rating.id === undefined) throw new Error("No legacy rating is available for reconciliation.");
       const detail = await getLegacyRating(loaded.latest_legacy_rating.id);
       setLegacy(detail); setMappings(detail.extracted_scores.map(() => ""));
     }).catch((cause: Error) => setError(cause.message)).finally(() => setBusy(false));

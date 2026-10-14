@@ -57,6 +57,12 @@ Production cookies require HTTPS. The owner signs in using the small existing-st
 sign-in form; anonymous users can browse without a session. A 401 clears client owner
 state; a 403 reports the failed operation without blindly retrying it.
 
+The editorial landing page is `/`; the catalogue is `/library`. See
+[public guest mode](public-guest-mode.md) for the public route/field allowlist and
+logout behavior. Cloudflare Tunnel can provide origin connectivity; do not put
+the whole hostname behind Cloudflare Access if anonymous browsing is intended.
+Owner authentication and CSRF protection remain enforced by Aftertone itself.
+
 ## Linux VPS procedure (run only when deployment is approved)
 
 Install Docker with Compose and a supported Caddy release on the host. Create DNS for

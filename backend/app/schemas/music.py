@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal as DomainDecimal
-from typing import Annotated, Generic, Literal, TypeVar
+from typing import Annotated, ClassVar, Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -22,6 +22,7 @@ Decimal = Annotated[DomainDecimal, PlainSerializer(float, when_used="json")]
 
 class APIModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    _public_fields: ClassVar[frozenset[str] | None] = None
 
     @model_serializer(mode="wrap")
     def public_fields(self, handler):
@@ -36,6 +37,8 @@ class APIModel(BaseModel):
                     data[key] = None
                 elif key == "needs_revisit":
                     data[key] = False
+            if self._public_fields is not None:
+                data = {key: value for key, value in data.items() if key in self._public_fields}
         return data
 
 
@@ -43,6 +46,7 @@ T = TypeVar("T")
 
 
 class PaginatedResponse(APIModel, Generic[T]):
+    _public_fields = frozenset({"items", "page", "page_size", "total", "total_pages"})
     items: list[T]
     page: int
     page_size: int
@@ -114,6 +118,25 @@ class ArtistUpdate(APIModel):
 
 
 class ArtistResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "id",
+            "name",
+            "artist_type",
+            "country_code",
+            "birth_date",
+            "death_date",
+            "formed_year",
+            "dissolved_year",
+            "image_url",
+            "album_count",
+            "primary_track_count",
+            "featured_track_count",
+            "project_counts",
+            "average_rating",
+            "rated_project_count",
+        }
+    )
     id: int
     name: str
     normalized_name: str | None = None
@@ -135,6 +158,9 @@ class ArtistResponse(APIModel):
 
 
 class ArtistAlbumResponse(APIModel):
+    _public_fields = frozenset(
+        {"id", "title", "year", "release_date", "release_type", "cover_url", "artists", "rating"}
+    )
     id: int
     title: str
     year: int | None
@@ -146,6 +172,20 @@ class ArtistAlbumResponse(APIModel):
 
 
 class TrackAppearanceResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "track_id",
+            "track_title",
+            "track_position",
+            "album_id",
+            "album_title",
+            "album_year",
+            "album_release_type",
+            "album_cover_url",
+            "score",
+            "role",
+        }
+    )
     track_id: int
     track_title: str
     track_position: int
@@ -159,6 +199,20 @@ class TrackAppearanceResponse(APIModel):
 
 
 class ArtistTrackResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "track_id",
+            "title",
+            "disc_number",
+            "track_position",
+            "score",
+            "album_id",
+            "album_title",
+            "album_year",
+            "album_release_date",
+            "album_cover_url",
+        }
+    )
     track_id: int
     title: str
     disc_number: int
@@ -172,6 +226,7 @@ class ArtistTrackResponse(APIModel):
 
 
 class ArtistDetailResponse(ArtistResponse):
+    _public_fields = ArtistResponse._public_fields | {"albums", "featured_appearances"}
     albums: list[ArtistAlbumResponse]
     featured_appearances: list[TrackAppearanceResponse]
 
@@ -351,6 +406,17 @@ class CoverFromUrl(APIModel):
 
 
 class TrackResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "id",
+            "disc_number",
+            "position",
+            "title",
+            "primary_artists",
+            "featured_artists",
+            "uses_album_artists",
+        }
+    )
     id: int
     disc_number: int
     position: int
@@ -380,6 +446,31 @@ class FavoriteSongEntryUpdate(APIModel):
 
 
 class FavoriteSongEntryResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "id",
+            "global_position",
+            "track_id",
+            "track_title",
+            "artists",
+            "album_id",
+            "album_title",
+            "album_year",
+            "cover_url",
+            "disc_number",
+            "track_position",
+            "base_score",
+            "emotional_connection",
+            "replay_value",
+            "originality",
+            "genre",
+            "notes",
+            "final_score",
+            "rank_movement",
+            "rank_delta",
+            "top_100_entered_at",
+        }
+    )
     id: int
     global_position: int
     track_id: int
@@ -416,6 +507,7 @@ class FavoriteSongTrackSearchResponse(APIModel):
 
 
 class LatestRevisionResponse(APIModel):
+    _public_fields = frozenset({"id", "created_at", "pre_rating", "final_rating"})
     id: int
     created_at: datetime
     pre_rating: Decimal | None
@@ -423,6 +515,7 @@ class LatestRevisionResponse(APIModel):
 
 
 class LegacyRatingSummaryResponse(APIModel):
+    _public_fields = frozenset({"legacy_final_rating", "computed_final_rating"})
     id: int
     imported_at: datetime
     legacy_final_rating: Decimal | None
@@ -431,6 +524,24 @@ class LegacyRatingSummaryResponse(APIModel):
 
 
 class AlbumResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "id",
+            "title",
+            "artists",
+            "year",
+            "release_date",
+            "release_type",
+            "disc_count",
+            "tracks",
+            "latest_revision",
+            "cover_url",
+            "needs_revisit",
+            "revisit_reason",
+            "revisit_marked_at",
+            "latest_legacy_rating",
+        }
+    )
     id: int
     title: str
     musicbrainz_release_id: str | None = None
@@ -450,10 +561,12 @@ class AlbumResponse(APIModel):
 
 
 class AlbumFacetsResponse(APIModel):
+    _public_fields = frozenset({"decades"})
     decades: dict[int, list[int]]
 
 
 class AlbumRatingSummaryResponse(APIModel):
+    _public_fields = frozenset({"average", "rated_count"})
     average: Decimal | None
     rated_count: int
 
@@ -547,6 +660,9 @@ class RatingRevisionCreate(APIModel):
 
 
 class TrackRatingRevisionResponse(APIModel):
+    _public_fields = frozenset(
+        {"track_id", "title", "disc_number", "position", "score", "include_in_pre_rating", "notes"}
+    )
     track_id: int
     title: str
     disc_number: int
@@ -557,6 +673,9 @@ class TrackRatingRevisionResponse(APIModel):
 
 
 class RatingRevisionSummaryResponse(APIModel):
+    _public_fields = frozenset(
+        {"id", "created_at", "pre_rating", "coherence", "emotion", "bad_experience", "final_rating"}
+    )
     id: int
     created_at: datetime
     pre_rating: Decimal | None
@@ -567,6 +686,15 @@ class RatingRevisionSummaryResponse(APIModel):
 
 
 class RatingBreakdownResponse(APIModel):
+    _public_fields = frozenset(
+        {
+            "pre_contribution",
+            "coherence_contribution",
+            "bad_experience_contribution",
+            "emotion_contribution",
+            "final_rating",
+        }
+    )
     pre_contribution: Decimal | None
     coherence_contribution: Decimal | None
     bad_experience_contribution: Decimal | None
@@ -575,6 +703,14 @@ class RatingBreakdownResponse(APIModel):
 
 
 class RatingRevisionResponse(RatingRevisionSummaryResponse):
+    _public_fields = RatingRevisionSummaryResponse._public_fields | {
+        "album_id",
+        "coherence_notes",
+        "emotion_notes",
+        "album_notes",
+        "rating_breakdown",
+        "tracks",
+    }
     album_id: int
     coherence_notes: str | None
     emotion_notes: str | None

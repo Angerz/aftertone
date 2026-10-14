@@ -4,6 +4,12 @@ Generated from reviewed route declarations; authentication is enforced server-si
 Public JSON removes journal notes and revisit state. Public collection filters for private
 revisit state require owner access. No public GET changes journal state.
 
+Public API reads are explicitly allowlisted in `app/auth.py:PUBLIC_READ_ROUTES`;
+new API routes require owner authorization by default. Public response models
+declare `_public_fields` projections. Artist maintenance filters also require owner
+access. See [public guest mode](public-guest-mode.md) for the exact field contract,
+the `/` landing and `/library` catalogue routes, and logout/cache behavior.
+
 | Method | Path | Access | Effects |
 |---|---|---|---|
 | GET | `/health` | Public | Read catalogue table for storage readiness |
