@@ -14,8 +14,23 @@ frontend/tsconfig.tsbuildinfo
 
 # SQLite
 *.db
+*.db-*
+*.db.*
+*.db3
+*.db3-*
+*.db3.*
 *.sqlite
+*.sqlite-*
+*.sqlite.*
 *.sqlite3
+*.sqlite3-*
+*.sqlite3.*
+*.s3db
+*.s3db-*
+*.s3db.*
+*.sl3
+*.sl3-*
+*.sl3.*
 backend/data/covers/
 backend/data/backups/
 
