@@ -1,184 +1,354 @@
 # Aftertone
 
-Aftertone is my local music journal: a private place for my listening history, my thoughts, and my love of music. I use it to keep albums, per-track scores, and notes without overwriting what I felt at a particular moment. It includes a visual album library, structured artists and credits, legacy Excel import and reconciliation, and Album Momentum.
+Aftertone is a personal musical journal: a place to keep the albums you listen to, the songs that stay with you, and what you thought and felt along the way. It preserves track scores, written notes and listening-session revisions without overwriting a previous experience just because your opinion has changed.
 
-It supports local use and a controlled public deployment: visitors can browse music metadata and numeric ratings, while only the owner can edit. Written journal notes and revisit details remain private. See [production deployment](docs/production/deployment.md) before exposing it to the internet.
+The numbers are personal, not an objective measure of musical worth. Aftertone is not a streaming service, a social network or a recommendation engine. Its purpose is to help one listener build a lasting record of their relationship with music.
 
-The editorial entry page at `/` offers `Explore as guest` and owner sign-in. The
-catalogue lives at `/library`; guests can browse artists, albums, track catalogues
-and Favorite Songs with search, filters and sorting. Owner sessions restore all
-editing/import actions. See [public guest mode](docs/production/public-guest-mode.md)
-for the exact publication contract and privacy boundaries.
+The interface follows a warm editorial style: ivory backgrounds, serif headings, terracotta accents and compact catalogue lists. It works locally, with an optional public, read-only view of the catalogue and numeric ratings. There is one owner; written journal notes and revisit details remain private.
 
-## Features
+## What you can do
 
-- Visual album library with pagination, search, sorting, and year/decade filters.
-- Local cover art uploads and import from image URLs.
-- Per-track scores and notes with canonical album-rating calculation.
-- Immutable rating history and Rate Again from the latest revision.
-- Revisit markers for albums worth returning to.
-- Canonical artists, multi-artist albums, featured track credits, portraits, and optional person/group metadata.
-- Legacy Excel preview/import and explicit tracklist reconciliation.
-- Album Momentum for viewing an album's track-score trajectory.
+### Library and album journal
 
-## Requirements
+- Browse a cover-led Library with server-side pagination and search by album or artist.
+- Filter by year, decade or unrated status; the owner can also filter albums marked for a revisit.
+- Sort by Rating, Date rated, Release year, Artist or Title, independently ascending or descending. Unrated albums remain last for rating/date sorting in both directions.
+- Keep search, filters, sorting and pagination in the URL, so refresh and contextual return navigation preserve the browsing state where available.
+- Record a release year alone or an optional exact release date. An exact date synchronizes the year; clearing the date preserves the year. No month or day is invented for year-only records.
+- Follow the year from Album Detail to the corresponding Library filter. With an exact date, the month is a separate link to that month and year; month-specific results exclude year-only records.
+- Maintain ordered album artists, structured primary/featured track credits and multi-disc tracklists.
+- Store cover art locally, from an upload or a supported image URL.
 
-- Python 3.13+
-- Node.js 20+
+Supported project types are Album, Soundtrack, Single, EP, Mixtape, Compilation, Live, Reissue and Unknown/Other projects.
 
-No database service or Docker installation is required. SQLite is a local file managed through Alembic.
+Album Detail brings together the latest rating, parameter contributions, track scores, notes and revision history. `Rate album` / `Rate again` is the primary owner action; metadata editing lives in the compact actions menu. Editing metadata does not rewrite completed rating snapshots.
 
-## Start from a clone
+### Listening sessions and rating history
 
-Copy the sample environment file and adjust loopback ports only if they conflict with another local application:
+The Album Rating Editor records individual track scores, track notes, coherence, emotion and album-level notes. Each successful save creates a new, immutable rating revision. You can start a new session from the latest revision without changing the old one.
 
-```bash
-cp .env.example .env
-```
+- Included tracks need a valid score from 0 to 10. A score of `0` is valid; a missing score is not zero.
+- Tracks excluded from PRE collapse to compact rows. Hiding their fields preserves any score and notes, both in form state and in the saved payload.
+- Required-track validation appears after interaction or an attempted save, rather than on untouched fields at initial load.
+- A provisional summary accompanies the editor; the backend recalculates the authoritative result when saving.
+- Local drafts autosave in the browser. A recovery dialog offers `Resume draft` or `Discard draft`, with the last local save time. Recovery must be resolved before autosave can overwrite that draft; Escape or backdrop interaction does not discard it.
+- Failed saves leave the editor and its data available for retry. Browser storage availability still matters: local drafts are not a substitute for a database backup.
 
-With the included Makefile, prepare dependencies once. Generate an owner password hash with `cd backend && .venv/bin/python -m app.auth`, store it single-quoted as `AFTERTONE_OWNER_PASSWORD_HASH` in `.env`, and then start both processes together:
+Album Momentum visualizes the track-score trajectory of a revision in disc/track order, with a PRE reference. Unrated tracks remain gaps, not fabricated zero scores. Historical revision views preserve their original track snapshots, scores and notes.
 
-```bash
-make setup
-make dev
-```
+### Artists and their catalogue
 
-`make dev` applies pending migrations, starts the API and Vite, and stops both when you press Ctrl+C. For an already configured checkout, `make dev` is the only command needed to start the app. Run `make help` for the remaining commands.
+Artists are canonical catalogue entities, not names inferred from song titles. The Artists Catalogue provides normalized search, server-side pagination and separate sorting field/direction controls:
 
-Create and activate a virtual environment, install the API and test dependencies, then migrate and run it:
+- `Primary` is the default: artists with at least one primary project.
+- `All artists` includes the whole artist catalogue.
+- `Featuring only` includes artists with featured credits but no primary projects.
+- Sorting supports Name, Average rating and Project count in both directions. Unrated artists remain last for average-rating sorting; deterministic name/ID tie-breakers keep pagination stable.
 
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-set -a; source ../.env; set +a
-alembic upgrade head
-uvicorn app.main:app --host "$AFTERTONE_API_HOST" --port "$AFTERTONE_API_PORT" --reload
-```
+Artist names remain unchanged for display. Search and backend alphabetical sorting fold accents and common apostrophe variants, so names such as `Álvaro Díaz` sort with A. Nationality flags use existing country metadata; missing country information produces no flag.
 
-> The default SQLite URL is relative to the backend working directory. Run Alembic and Uvicorn from `backend/` as shown above; running them from another working directory may create or use a different SQLite file.
+Expandable artist rows show up to five primary projects, with rated projects first and chronological ordering within the rated/unrated sets. The limit is applied after ordering. Multiple artists can stay expanded independently, and `View artist →` opens the full detail page.
 
-The health check is available at `http://127.0.0.1:8017/health` with the sample configuration.
+Artist Detail includes a portrait, optional person/group biography and country, the average of rated primary projects, completion squares and a project-type distribution. Featured appearances do not contribute to that average or primary project count. A valid rating of zero counts as rated. Tabs organize the content:
 
-In another terminal, start the frontend:
+- **Projects:** grouped by release type, newest first. Within a year, known exact dates precede year-only projects; title/ID tie-breakers handle the remaining ties.
+- **Top tracks:** up to ten highest-rated eligible tracks across the artist's catalogue, with compact covers, album/year metadata and numeric scores.
+- **Featured appearances:** structured featured credits, kept separate from primary projects/tracks.
 
-```bash
-cd frontend
-npm install
-set -a; source ../.env; set +a
-npm run dev -- --port "$AFTERTONE_WEB_PORT"
-```
+Tab selections participate in browser history: Back/Forward restores prior tabs before leaving the artist page. Editing is available through the owner actions menu.
 
-The Vite server is loopback-bound and proxies `/api` and `/media` to the backend. The frontend uses same-origin requests. CORS permits the configured web origin; owner sessions and CSRF checks independently protect writes. Sign in with the owner control. Without a configured hash the application is read-only.
+### Top tracks and the full track catalogue
 
-Album covers are stored in `AFTERTONE_COVER_DIR` (by default `backend/data/covers`). Both album covers and artist portraits use this directory. A complete backup includes the SQLite database, all media, and snapshot metadata.
+Artist track scores come only from each album's **latest native rating revision**, not an average of past sessions, an album final score or a Favorite Songs score. `0` is rated; `NULL` is unrated. Exclusion from PRE alone does not exclude a scored track.
 
-## Complete backups
+Primary eligibility uses explicit track credits. If a track has no explicit primary credits, it inherits the album artists. Featuring-only appearances are not part of the primary Top tracks list.
 
-Stop application writers and run `make backup`. The script creates a consistent SQLite
-copy plus covers, artist portraits and a checksummed manifest. Keep an encrypted copy
-outside the application host and regularly test restoration. See
-[backup and restore](docs/production/backup-restore.md) for local/container commands,
-scheduling, retention and non-destructive recovery.
+Top tracks sorts by score descending, then album release chronology (including the year-only fallback), album title, disc number, track position and stable track ID.
 
-## Production preparation
+`Explore all tracks →` opens `/artists/:id/tracks`, a dedicated catalogue with:
 
-The multi-stage `Dockerfile` serves frontend and API together as a non-root user;
-`compose.yaml` provides persistent storage and a loopback-only application port.
-Production requires an owner Argon2id hash, an HTTPS origin and persistent absolute paths.
-Use `.env.production.example` as a template. No deployment is performed automatically.
-Read the [security audit](docs/production/security-audit.md),
-[deployment guide](docs/production/deployment.md) and
-[release checklist](docs/production/release-checklist.md).
+- Rated and unrated tracks, 20 per page.
+- Search by track or album title.
+- Rating, release-date, album and title sorting in both directions, applied before pagination. Unrated tracks remain last for rating sorting.
+- Search/sort/direction/page URL state and contextual return navigation.
+- Links to parent albums and sequence numbering across pages. These numbers describe the current results, not a permanent rank.
 
-## Tests
+### Favorite Songs: a subjective Top 100
 
-For release confidence:
-
-```bash
-cd backend
-pytest
-ruff check .
-ruff format --check .
-
-cd ../frontend
-npm run lint
-npm test -- --run
-npm run build
-```
-
-For day-to-day development, prefer focused tests such as `pytest tests/ratings/test_calculator.py` or `npm test` for the relevant frontend feature. Run Alembic migrations from `backend/` with `alembic upgrade head`.
-
-## Layout
-
-```text
-backend/          FastAPI API, SQLAlchemy models, Alembic migrations, and domain logic
-frontend/         React and TypeScript client
-docs/decisions/   concise architectural decisions
-AGENTS.md         project conventions
-.env.example      loopback ports, SQLite URL, and cover directory
-```
-
-## API
-
-### Favorite Songs
-
-Favorite Songs is a separate, fully personal ranking of individual catalogue tracks. Add songs manually by selecting an existing track, then recording your assessment; it does not create or alter album-rating revisions.
+Favorite Songs is a separate personal ranking of catalogue tracks. Add entries manually through `+ Add song`, select an existing track in the anchored search popover, and record your assessment. This does not create or alter album-rating revisions. There is no Favorite Songs Excel synchronization/import pipeline.
 
 The ranking has two views:
 
-- **Top 100** shows only positions 1–100.
-- **Candidates** shows every ranked song after position 100, so a song can remain part of the journal without being in the Top 100.
+- **Top 100:** canonical positions 1–100, or fewer if the journal has fewer entries.
+- **Candidates:** canonical positions 101 onward. These entries remain in the journal and can enter the Top 100 when scores change.
 
-Each ranking row can be expanded independently to inspect its stored score breakdown and personal notes. Opening one song never closes another; Edit and Remove remain separate actions.
+Each row expands independently to show the assessment and personal notes. `Edit` stays visible; removal is tucked into an overflow menu and still requires confirmation. After editing, the refreshed ranking returns to the same entry by ID, opens the correct view if membership changed, clears a hiding search and briefly highlights the song at its new position.
 
-Favorite Songs use a separate, completely subjective formula:
+The formula is deliberately subjective:
+
+| Criterion | Input scale | Weight after normalizing to 0–10 |
+| --- | --- | --- |
+| Song score / Puntuación | 0–10 | 25% |
+| Emotional connection / Conexión emocional | 0–5 | 55% |
+| Replay value | 0–5 | 15% |
+| Originality / Originalidad | 0–5 | 5% |
+
+Using the stored input scales, the backend formula is:
 
 ```text
-final score = Puntuación × 25%
-            + Conexión emocional × 55%
-            + Replay value × 15%
-            + Originalidad × 5%
+final_score = 0.25 × base_score
+            + 1.10 × emotional_connection
+            + 0.30 × replay_value
+            + 0.10 × originality
 ```
 
-`Puntuación` measures the song as an isolated work, while the other criteria record the listener's personal response. `Originalidad` specifically means how singular the song feels based on the listener's own experience, not an objective claim of historical innovation. Historical relevance is not part of the Favorite Songs formula.
+Song score assesses the song as an isolated work. The other criteria describe the listener's response. Originality means how singular the song feels within that listener's experience, not an objective claim of historical innovation. Historical relevance is not part of this formula.
 
-Songs are ordered first by final score. Exact score ties are deterministic: emotional connection, replay value, base score, originality, then track title.
+Canonical positions use this order:
 
-Interactive API documentation is available at `/docs` in development and disabled in production. The full [API access inventory](docs/production/api-inventory.md) identifies public and owner-only routes.
+```text
+final_score DESC,
+emotional_connection DESC,
+replay_value DESC,
+base_score DESC,
+originality DESC,
+track title ASC
+```
 
-### Albums
+Two songs can display the same rounded final score while receiving different positions from these tie-breakers. Display sorting offers Position, Emotional connection, Replay value, Song score, Originality and Title. It changes only the order inside the selected view, never the canonical numbers or Top 100/Candidates membership. Display-sort ties use canonical position ascending; search also preserves those positions.
 
-- `GET /api/albums` for list/search/pagination/filtering and `GET /api/albums/facets` for year navigation.
-- `POST /api/albums`, `GET /api/albums/{id}`, and `PATCH /api/albums/{id}` for catalogue metadata.
-- Rating revisions, revisit markers, and local cover upload/import endpoints under album routes.
+Top 100 movement indicators (`UP`, `DOWN`, `NEW`, `UNCHANGED`) persist across refreshes and reflect the most recent meaningful canonical ranking change. After 30 days they display as unchanged. This is a recent-movement feature, not a complete archive of every ranking version; display sorting/search does not create movement.
 
-### Artists
+### Assisted metadata and legacy records
 
-- Artist list, creation, detail, and metadata update endpoints.
-- Structured ordered album artists and primary/featured track credits.
+MusicBrainz integration is optional and owner-only. You can search and review a specific release before importing its local album record, tracklist and available cover, or use the existing album editor's assisted tracklist/cover tools. Reliable full dates can populate the optional release date; partial dates do not become invented exact dates. This is edition-aware metadata assistance, not an automatic listening-history sync.
 
-### Legacy
+Artist metadata lookup offers a field-by-field comparison. Select which values to apply to the form; the artist is not persisted until you save. Existing values are not silently overwritten. Routine journal browsing and manual entry do not require MusicBrainz.
 
-- Excel import preview and commit endpoints.
-- Legacy rating detail, reconciliation preview, and reconciliation endpoints.
+The owner-only legacy album-rating importer remains available directly at `/import`, even though its link is no longer in the Library header. It previews supported `.xlsx` workbook rows, reports warnings/errors and imports selected records. It expects the historical album-rating format, not arbitrary spreadsheets or Favorite Songs workbooks: required headers include `ALBUM`, `ARTISTA`, `PRECALIFICACION`, `COHERENCIA` and `EMOCION`; optional metadata includes year, decade, genre and bad experience.
 
-## Key decisions
+Legacy scores and source formula/audit metadata remain separate from native revisions. A conscious reconciliation maps extracted scores to a real tracklist before creating a native snapshot; import does not invent track identities or turn unmapped tracks into zero ratings. Library/artist effective album ratings use the latest native revision when present, otherwise the latest legacy computed rating, falling back to its stored legacy final rating.
 
-- SQLite is used for durable, zero-administration local storage; Alembic is the schema authority.
-- Rating formulas live in the backend calculator, use `Decimal`, and revisions are immutable snapshots.
-- Artists are first-class entities with structured, ordered album and track credits.
-- Legacy ratings remain separate from native revisions until explicit reconciliation.
-- Covers uploaded or imported from URLs are stored locally; only media URLs are exposed by the API.
-- `Unrated` is distinct from a score of `0` in historical track snapshots.
+## Owner access and public reading
 
-See `docs/decisions/` for the full rationale.
+The editorial landing page at `/` offers `Explore as guest` and `Owner sign in`. The catalogue is at `/library`. A shared header links Library, Artists and Top 100, with owner authentication controls; narrow screens use a compact navigation menu. Detail pages keep contextual Back navigation instead of duplicating the global links.
 
-## Known limitations
+There is no registration, multi-user account system or shared journal editing. Owner authentication is required for writes **even in local development**.
 
-- There is one owner and no registration or sync. All catalogue metadata and numeric history are public when deployed; there is no per-entry publication control.
-- There is no browser E2E suite yet.
-- Legacy multi-artist strings are not automatically split into separate artists.
-- Some history/ranking reads scale with the complete personal catalogue; monitor before broader traffic.
-- The current TestClient emits an HTTPX integration deprecation warning; runtime behavior is unaffected.
+If you expose Aftertone publicly, anonymous readers can see catalogue metadata, generated covers/portraits, structured credits, numeric ratings and revisions, Favorite Songs criteria, genres, positions and movement. Written notes, revisit information, legacy source/import details and administrative metadata are not published. Guests cannot edit, import or use owner-only metadata lookup endpoints.
+
+**Public deployment is not a private vault for catalogue metadata or numeric listening history.** There is no per-entry publication toggle. Review the [public guest mode contract](docs/production/public-guest-mode.md) before exposing a journal. Local drafts stay in the owner's browser and are not deleted on logout; a shared browser profile is not a secure vault.
+
+Owner access uses an environment-provisioned Argon2id password hash, server-side sessions, HttpOnly cookies and Origin/CSRF checks for writes. Production cookies require HTTPS. Logout revokes the current session; signing in replaces previous sessions. Changing the configured hash and restarting invalidates existing sessions. There is no default password.
+
+## Run locally
+
+### Requirements
+
+- Python 3.13 or newer.
+- Node.js 22.12 or newer recommended; the locked Vite version also supports Node 20.19+.
+- npm and, for the one-command workflow, Make and Bash.
+
+SQLite is a local file managed through Alembic. Local development does not require Docker or a database service.
+
+### First-time setup
+
+Run from the repository root:
+
+```bash
+make setup
+```
+
+This creates `.env` from [.env.example](.env.example) if absent, prepares `backend/.venv`, installs the backend development dependencies and installs frontend dependencies. It does not overwrite an existing `.env`.
+
+Generate your owner password hash using that environment:
+
+```bash
+(cd backend && .venv/bin/python -m app.auth)
+```
+
+The command prompts twice for a password of at least 16 characters and prints its hash. Store the password securely and put the generated hash in the root `.env`:
+
+```dotenv
+# Replace the placeholder with the generated Argon2id hash, not your password.
+AFTERTONE_OWNER_PASSWORD_HASH='<generated Argon2id hash>'
+```
+
+Keep the single quotes: Argon2 hashes contain dollar signs, and the Makefile sources `.env` as shell configuration. Never put passwords/hashes in `VITE_*` variables; those are public frontend build inputs. Do not commit `.env`.
+
+Then start both processes:
+
+```bash
+make dev
+```
+
+`make dev` loads `.env`, applies pending migrations and runs Uvicorn plus Vite. Ctrl+C stops both. For an already configured checkout, this is the only startup command needed. Back up an existing journal before starting an upgraded checkout that contains migrations.
+
+With the sample configuration:
+
+- App: `http://127.0.0.1:5177`
+- Owner sign-in: `http://127.0.0.1:5177/login`
+- API health check: `http://127.0.0.1:8017/health`
+- Development API documentation: `http://127.0.0.1:8017/docs`
+
+Without a configured hash, development guest browsing remains available, but owner login reports `Owner login is not configured.` Production refuses to start without the required owner configuration.
+
+### Configuration and storage
+
+The local template defines:
+
+| Variable | Default / purpose |
+| --- | --- |
+| `AFTERTONE_API_HOST`, `AFTERTONE_API_PORT` | `127.0.0.1`, `8017` |
+| `AFTERTONE_WEB_HOST`, `AFTERTONE_WEB_PORT` | `127.0.0.1`, `5177` |
+| `AFTERTONE_WEB_ORIGIN` | `http://127.0.0.1:5177`, trusted browser origin |
+| `AFTERTONE_DATABASE_URL` | `sqlite:///./aftertone.sqlite3` |
+| `AFTERTONE_COVER_DIR` | `./data/covers`, for both covers and portraits |
+| `AFTERTONE_ENV` | `development` |
+| `AFTERTONE_OWNER_PASSWORD_HASH` | Generated Argon2id hash, required to edit |
+| `AFTERTONE_SESSION_SECONDS` | `43200` (12 hours) |
+
+The Makefile runs the backend from `backend/`, so the defaults resolve to **`backend/aftertone.sqlite3`** and **`backend/data/covers`**. Run manual backend commands from the same directory. A different working directory with a relative SQLite URL can open or create a different database, which may look like an empty journal. Use an explicit absolute SQLite URL when intentionally pointing elsewhere.
+
+Vite proxies `/api` and `/media` to the backend. The frontend uses same-origin requests by default; do not hardcode a LAN API address to work around local startup problems. If changing ports, update the web origin consistently and restart. Manual Uvicorn/Alembic commands need the environment loaded explicitly; the backend does not automatically source the root `.env`.
+
+If an existing environment reports missing `argon2`, rerun `make setup` to install the declared dependencies into `backend/.venv`. A dependency listed in a lockfile is not necessarily installed in the interpreter currently running the app.
+
+### Commands
+
+| Command | Purpose |
+| --- | --- |
+| `make setup` | Prepare/update local dependencies and create `.env` if missing |
+| `make dev` | Migrate, then run backend and frontend together |
+| `make migrate` | Apply pending Alembic migrations to the configured database |
+| `make backup` | Create a complete local journal snapshot |
+| `make test` | Run backend and frontend tests |
+| `make lint` | Python lint/format checks and frontend TypeScript checks |
+| `make build` | Type-check and build the frontend |
+| `make help` | Show the common commands |
+
+For separate terminals, after setup:
+
+```bash
+# API terminal, starting from the repository root
+set -a
+source .env
+set +a
+cd backend
+.venv/bin/alembic upgrade head
+.venv/bin/uvicorn app.main:app --host "$AFTERTONE_API_HOST" --port "$AFTERTONE_API_PORT" --reload
+```
+
+```bash
+# Frontend terminal, starting from the repository root
+set -a
+source .env
+set +a
+cd frontend
+npm run dev -- --host "$AFTERTONE_WEB_HOST" --port "$AFTERTONE_WEB_PORT"
+```
+
+## Preserve your journal
+
+The database and media are the durable journal; browser drafts are separate. Never delete or replace the SQLite file to resolve a migration error. Check the configured path and Alembic revision first, and keep a recoverable copy before schema upgrades.
+
+Stop `make dev` with Ctrl+C (and stop any other application writers) before creating a complete snapshot:
+
+```bash
+make backup
+```
+
+The backup tool uses SQLite's online backup API, includes generated covers and portraits, and writes a manifest with schema revision, UTC timestamp and checksums. It verifies integrity and referenced media, excludes sessions/login-throttle rows from the backup copy, and does not modify the original journal. Archives default to `backend/data/backups`; `AFTERTONE_BACKUP_DIR` can select a different destination. Credentials/configuration must be retained securely and separately.
+
+Keep encrypted copies off the application host and test restoration regularly. Daily scheduling, off-host transfer and retention are operator configuration, **not automatically installed by `make setup` or `make dev`**. The [backup and restore guide](docs/production/backup-restore.md) describes local/container backups, scheduling precautions and restoration into a new directory without overwriting live data. Do not use a plain file copy of a live SQLite database as the backup workflow.
+
+## Optional public deployment
+
+Local use remains the simplest way to keep a journal. For intentional public reading, the repository includes a multi-stage [Dockerfile](Dockerfile), [compose.yaml](compose.yaml), a [production environment template](.env.production.example) and a [Caddy configuration](deploy/Caddyfile). One non-root application container serves the built frontend, API and generated media, with SQLite/media on persistent storage.
+
+Use one application replica/worker and local persistent disk. Production requires an owner hash, an exact HTTPS origin and absolute persistent database/media paths. Do not expose development servers or a raw SQLite file publicly. Interactive API documentation is disabled in production. Running local Make commands does not deploy the application.
+
+Before deployment or upgrades, read:
+
+- [Controlled deployment](docs/production/deployment.md)
+- [Public guest mode and privacy boundaries](docs/production/public-guest-mode.md)
+- [Security audit](docs/production/security-audit.md)
+- [Release checklist](docs/production/release-checklist.md)
+- [Backup and restoration](docs/production/backup-restore.md)
+
+## Development and verification
+
+Aftertone is a small modular monolith: FastAPI/SQLAlchemy/Alembic in the backend, React/TypeScript/Vite in the frontend, and SQLite for durable storage. No queue, separate accounts service or external music service is needed for manual journal use.
+
+Backend tests configure a separate test SQLite path in `backend/tests/conftest.py`; migration/backup tests use synthetic data and isolated destinations. Keep tests and migration experiments off the personal database. Do not point test fixtures at your journal or run application migrations against it as a test.
+
+For focused development checks, after `make setup`:
+
+```bash
+cd backend
+.venv/bin/pytest tests/ratings/test_calculator.py
+.venv/bin/pytest tests/favorite_songs
+cd ../frontend
+npm test -- --run src/features/ratings/ratingDraftStorage.test.ts
+npm run lint
+npm run build
+```
+
+For broader release verification, run `make test`, `make lint` and `make build` from the root. Frontend `lint` currently runs TypeScript checks, not a separate ESLint pipeline. There is no committed browser end-to-end suite; use the release checklist for manual navigation, responsive, privacy and recovery checks.
+
+### Project layout and API
+
+```text
+backend/app/             API, models, schemas, ratings, imports and integrations
+backend/alembic/         schema migrations
+backend/tests/           isolated backend/domain tests
+frontend/src/            React UI, API client and feature tests
+scripts/                complete backup and safe restoration tools
+docs/decisions/          architectural decisions
+docs/production/         deployment, privacy, security and recovery runbooks
+deploy/                 production entrypoint and reverse-proxy example
+Makefile                local setup, startup and verification commands
+.env.example            local configuration template; no credentials included
+```
+
+Development `/docs` documents the API contract. Main route families are `/api/albums` (metadata, revisions, media and revisit controls), `/api/artists` (metadata, portraits and tracks), `/api/favorite-songs`, `/api/auth`, legacy imports/reconciliation and `/api/metadata/musicbrainz`. The [API access inventory](docs/production/api-inventory.md) distinguishes public reads from owner-only operations.
+
+### Rating model and durable decisions
+
+Album scores are calculated authoritatively in [backend/app/ratings/calculator.py](backend/app/ratings/calculator.py), using `Decimal` and persisted numeric columns. For included track scores:
+
+```text
+P = mean of included track scores
+M = (count(scores < 5) + 0.5 × count(5 ≤ scores < 7)) / included track count
+C = coherence (0–10)
+E = emotion (0–10)
+
+coherence contribution      = +0.25 × (C / 10)²
+bad experience contribution = −0.5 × M²
+emotion contribution        = +0.025 × (E − 5) × (1 − M), if E > 5
+                            = +0.025 × (E − 5), otherwise
+final rating                = P + the three contributions
+```
+
+With no included tracks, there is no meaningful final rating. Latest Rating displays parameter values separately from their backend-provided impacts, using three decimals for contributions and the final score. Bad experience is stored as a proportion; its percentage display converts that proportion rather than changing the stored value. Favorite Songs has its own separate [backend calculator](backend/app/favorite_songs/calculator.py).
+
+Other durable boundaries:
+
+- Alembic is the schema authority; application startup does not create tables with `create_all`.
+- Completed revisions are historical snapshots, not mutable views of current catalogue metadata.
+- Album artist order is meaningful; primary and featured track credits are structured relationships.
+- Legacy imports remain distinct until explicit reconciliation.
+- Media is stored locally; database files, notes and backup archives are not served as public media.
+- Missing ratings are distinct from a valid zero.
+
+See [architectural decisions](docs/decisions/) for the rationale.
+
+## Deliberate limits
+
+- One owner and one journal: no registration, multi-user collaboration or built-in cross-device synchronization.
+- No audio playback, streaming catalogue or objective claim behind personal ratings.
+- No per-entry public/private switch for catalogue metadata or numeric history.
+- Local drafts belong to a browser/device; they are not database backups or portable session sync.
+- MusicBrainz is assisted import, not background synchronization; incomplete source metadata stays incomplete.
+- Legacy multi-artist strings are not automatically split into canonical artists.
+- Some ranking/history reads scale with the full personal catalogue. The application targets a personal collection, not a high-traffic music platform.
