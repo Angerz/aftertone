@@ -9,6 +9,11 @@ export function trackScoreInRange(score: EditableTrackScore): boolean {
   return hasTrackScore(score) && Number.isFinite(value) && value >= 0 && value <= 10;
 }
 
+export function ratingScoreErrorMessage(score: EditableTrackScore): string | null {
+  if (trackScoreInRange(score)) return null;
+  return hasTrackScore(score) ? "Enter a number from 0 to 10." : "A score is required.";
+}
+
 export function trackScoreIsValid(score: EditableTrackScore, includedInPre: boolean): boolean {
   return includedInPre ? trackScoreInRange(score) : !hasTrackScore(score) || trackScoreInRange(score);
 }

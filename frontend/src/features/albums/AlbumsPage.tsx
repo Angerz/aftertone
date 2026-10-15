@@ -14,7 +14,7 @@ const libraryPageSize = 25;
 function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
   if (totalPages <= 1) return null;
   const pages = Array.from({ length: totalPages }, (_, index) => index + 1).filter((item) => item === 1 || item === totalPages || Math.abs(item - page) <= 2);
-  return <nav className="pagination" aria-label="Pagination"><button onClick={() => onPage(page - 1)} disabled={page === 1}>Previous</button>{pages.map((item, index) => <span key={item}>{index > 0 && item - pages[index - 1] > 1 && "…"}<button className={item === page ? "active" : ""} onClick={() => onPage(item)} aria-current={item === page ? "page" : undefined}>{item}</button></span>)}<button onClick={() => onPage(page + 1)} disabled={page === totalPages}>Next</button></nav>;
+  return <nav className="pagination" aria-label="Pagination"><button onClick={() => onPage(page - 1)} disabled={page === 1}>Previous</button>{pages.map((item, index) => <span className="pagination-page" key={item}>{index > 0 && item - pages[index - 1] > 1 && "…"}<button className={item === page ? "active" : ""} onClick={() => onPage(item)} aria-current={item === page ? "page" : undefined}>{item}</button></span>)}<span className="pagination-compact" aria-label={`Page ${page} of ${totalPages}`}>{page} / {totalPages}</span><button onClick={() => onPage(page + 1)} disabled={page === totalPages}>Next</button></nav>;
 }
 
 function LibraryRatingSummaryBlock({ summary, loading }: { summary: AlbumRatingSummary | null; loading: boolean }) {
