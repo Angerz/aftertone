@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { scoreForRevision, shouldShowTrackScoreError, trackScoreIsValid } from "./ratingTrackValidation";
+import { ratingScoreErrorMessage, scoreForRevision, shouldShowTrackScoreError, trackScoreIsValid } from "./ratingTrackValidation";
 
 describe("rating track validation", () => {
   it("accepts a blank score when the track is excluded from PRE", () => {
@@ -36,5 +36,20 @@ describe("rating track validation", () => {
     expect(shouldShowTrackScoreError(null, true, true, false)).toBe(true);
     expect(shouldShowTrackScoreError(null, true, false, true)).toBe(true);
     expect(shouldShowTrackScoreError("0", true, true, true)).toBe(false);
+  });
+
+  it("distinguishes missing scores from invalid numeric values", () => {
+    expect(ratingScoreErrorMessage(null)).toBe("A score is required.");
+    expect(ratingScoreErrorMessage("")).toBe("A score is required.");
+    for (const score of ["-0.1", "10.1", "NaN"]) {
+      expect(ratingScoreErrorMessage(score)).toBe("Enter a number from 0 to 10.");
+    }
+    for (const score of ["0", "7.5", "10"]) expect(ratingScoreErrorMessage(score)).toBeNull();
+  });
+
+  it("requires an excluded score to be corrected only when a value is present and invalid", () => {
+    expect(shouldShowTrackScoreError(null, false, false, true)).toBe(false);
+    expect(shouldShowTrackScoreError("11", false, false, true)).toBe(true);
+    expect(shouldShowTrackScoreError("0", false, false, true)).toBe(false);
   });
 });
