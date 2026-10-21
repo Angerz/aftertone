@@ -35,6 +35,14 @@ describe("ratingPreviewCalculator backend parity", () => {
     expect(preview.finalRating).toBeCloseTo(5.875, 10);
   });
 
+  it("exposes the existing terms without changing the final calculation", () => {
+    const preview = ratingPreviewCalculator(included([8, 6, 4]), 7, 3);
+    expect(preview.coherenceComponent).toBeCloseTo(0.1225, 10);
+    expect(preview.badExperienceComponent).toBe(-0.125);
+    expect(preview.emotionComponent).toBe(-0.05);
+    expect(preview.finalRating).toBe(6 + 0.1225 - 0.125 - 0.05);
+  });
+
   it("treats a score of 5 as a half bad-experience point", () => {
     expect(ratingPreviewCalculator(included([5]), 0, 5).badExperience).toBe(0.5);
   });
@@ -63,7 +71,7 @@ describe("ratingPreviewCalculator backend parity", () => {
 
   it("returns null ratings when no track is included", () => {
     const preview = ratingPreviewCalculator([{ score: 10, includeInPreRating: false }, { score: 1, includeInPreRating: false }], 7, 10);
-    expect(preview).toEqual({ preRating: null, badExperience: null, emotionComponent: null, finalRating: null });
+    expect(preview).toEqual({ preRating: null, badExperience: null, coherenceComponent: null, badExperienceComponent: null, emotionComponent: null, finalRating: null });
   });
 
   it("ignores excluded tracks in PRE and bad experience", () => {
