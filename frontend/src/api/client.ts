@@ -7,7 +7,7 @@ const sessionListeners = new Set<() => void>();
 export const onSessionExpired = (listener: () => void) => { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; };
 
 export class ApiError extends Error {
-  constructor(message: string, public readonly status?: number) { super(message); }
+  constructor(message: string, public readonly status?: number, public readonly validationPaths: readonly (readonly (string | number)[])[] = []) { super(message); }
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -27,8 +27,13 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       sessionListeners.forEach((listener) => listener());
     }
     const body: unknown = await response.json().catch(() => null);
-    const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string" ? body.detail : "The request could not be completed.";
-    throw new ApiError(response.status === 401 && path !== "/api/auth/login" ? "Owner login required. Please sign in again." : detail, response.status);
+    const rawDetail = body && typeof body === "object" && "detail" in body ? body.detail : null;
+    const detail = typeof rawDetail === "string" ? rawDetail : "The request could not be completed.";
+    const validationPaths = response.status === 422 && Array.isArray(rawDetail) ? rawDetail.flatMap((issue: unknown) => {
+      if (!issue || typeof issue !== "object" || !("loc" in issue) || !Array.isArray(issue.loc)) return [];
+      return [issue.loc.filter((part: unknown): part is string | number => typeof part === "string" || typeof part === "number")];
+    }) : [];
+    throw new ApiError(response.status === 401 && path !== "/api/auth/login" ? "Owner login required. Please sign in again." : detail, response.status, validationPaths);
   }
   const result = await response.json() as T;
   if (startedVersion !== sessionVersion) throw new ApiError("Your session changed. Please try again.");

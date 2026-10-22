@@ -8,7 +8,7 @@ export function addTrackToDisc(tracks: TrackUpdate[], discNumber: number): Track
   return [...tracks, { disc_number: discNumber, title: "" }];
 }
 
-export function moveTrackWithinDisc(tracks: TrackUpdate[], index: number, direction: -1 | 1): TrackUpdate[] {
+export function moveTrackWithinDisc<T extends TrackUpdate>(tracks: T[], index: number, direction: -1 | 1): T[] {
   const discNumber = tracks[index]?.disc_number;
   const discIndexes = tracks.flatMap((track, itemIndex) => track.disc_number === discNumber ? [itemIndex] : []);
   const target = discIndexes[discIndexes.indexOf(index) + direction];
