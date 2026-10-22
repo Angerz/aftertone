@@ -2,6 +2,8 @@
 .favorite-row-toggle > .favorite-row-score { color: inherit; display: contents; }
 .favorite-row-score > b { white-space: nowrap; }
 .favorite-mobile-controls, .favorite-row-chevron, .favorite-songs .favorite-detail p.favorite-song-context { display: none; }
+.favorite-evaluation .field-error { color: var(--rating-low); }
+.favorite-evaluation input[aria-invalid="true"] { border-color: var(--rating-low); }
 
 @media (max-width: 1024px) {
   .page.favorite-songs { padding-top: 1.8rem; }
@@ -67,6 +69,5 @@
   .favorite-songs .favorite-search-result > span { grid-column: 2; grid-row: 1; }
   .favorite-songs .favorite-search-result em { font: .75rem/1.4 system-ui, sans-serif; grid-column: 2; grid-row: 2; }
   .favorite-songs .favorite-song-hero { align-items: start; gap: .75rem; }
-  .favorite-songs .favorite-song-hero > div { min-width: 0; overflow-wrap: anywhere; }
   .favorite-songs .favorite-song-hero h1 { font-size: clamp(1.4rem, 5.6vw, 2rem); line-height: 1.15; }
 }

@@ -1,6 +1,7 @@
 import type { RatingRevisionDetail } from "../../api/types";
 import type { RatingPreview } from "./ratingPreviewCalculator";
 import { getRatingTier } from "../albums/ratingTier";
+import { formatPercentage } from "./ratingFormatting";
 
 const fmt = (value: number | null, digits = 3) => value === null ? "—" : value.toFixed(digits);
 const impact = (value: number | null) => value === null ? "—" : `${value > 0 ? "+" : ""}${fmt(value)}`;
@@ -23,7 +24,7 @@ export function RatingEditorPreview({ preview, saved, coherence, emotion }: {
       <div className="rating-preview-mobile rating-preview-columns" aria-hidden="true"><dt>Parameter</dt><dd>Value</dd><dd>Impact</dd></div>
       <div><dt>PRE</dt><dd>{fmt(summary?.preRating ?? null)}</dd><dd className="rating-preview-mobile">Base</dd></div>
       <div><dt>Coherence</dt><dd>{fmt(coherence, 1)}</dd><Impact value={summary?.coherenceComponent ?? null} /></div>
-      <div><dt>Bad experience</dt><dd><span className="rating-preview-desktop">{summary ? `${fmt(summary.badExperience, 2)} %` : "—"}</span><span className="rating-preview-mobile">{summary?.badExperience == null ? "—" : `${fmt(summary.badExperience * 100, 2)} %`}</span></dd><Impact value={summary?.badExperienceComponent ?? null} /></div>
+      <div><dt>Bad experience</dt><dd>{formatPercentage(summary?.badExperience ?? null)}</dd><Impact value={summary?.badExperienceComponent ?? null} /></div>
       <div><dt>Emotion</dt><dd>{fmt(emotion, 1)}</dd><Impact value={summary?.emotionComponent ?? null} /></div>
       <div className="final"><dt>Provisional final</dt><dd>{fmt(summary?.finalRating ?? null)}</dd></div>
     </dl>

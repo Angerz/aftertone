@@ -1000,6 +1000,50 @@ def test_artist_pagination_search_and_ordering() -> None:
     assert empty.items == [] and empty.total == 3
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["alvaro", "ÁLVARO", "álvaro", "diaz", "DÍAZ", "album", "ÁLBUM", "album de alvaro"],
+)
+def test_library_search_normalizes_album_titles_and_all_album_artists(query: str) -> None:
+    with SessionLocal() as session:
+        album = create_album(
+            AlbumCreate.model_validate(
+                {
+                    **album_payload("Álbum de Álvaro"),
+                    "artists": [{"name": "First artist"}, {"name": "Álvaro Díaz"}],
+                }
+            ),
+            session,
+        )
+        create_album(AlbumCreate.model_validate(album_payload("Unrelated")), session)
+        results = list_albums(search=query, session=session)
+    assert results.total == 1
+    assert [item.id for item in results.items] == [album.id]
+
+
+def test_library_normalized_search_keeps_filters_sorting_and_pagination() -> None:
+    with SessionLocal() as session:
+        for title, year in [("Álbum Z", 2024), ("Álbum A", 2024), ("Álbum Old", 1994)]:
+            create_album(
+                AlbumCreate.model_validate({**album_payload(title), "year": year}), session
+            )
+        results = list_albums(
+            search="  ALBUM  ",
+            year=2024,
+            decade=2020,
+            unrated=True,
+            sort="title",
+            direction="desc",
+            page=2,
+            page_size=1,
+            session=session,
+        )
+        no_match = list_albums(search="missing", session=session)
+    assert results.total == 2 and results.total_pages == 2
+    assert [item.title for item in results.items] == ["Álbum A"]
+    assert no_match.total == 0 and no_match.items == []
+
+
 def test_catalogue_search_normalizes_accents_and_apostrophes() -> None:
     with SessionLocal() as session:
         album = create_album(
