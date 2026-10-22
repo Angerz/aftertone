@@ -454,18 +454,18 @@ def album_filters(
         filters.extend([Album.release_year >= decade, Album.release_year <= decade + 9])
     if month is not None:
         filters.append(func.extract("month", Album.release_date) == month)
-    if search and (term := search.strip()):
-        pattern = f"%{term.casefold()}%"
+    if search and (term := normalize_search_text(search)):
+        pattern = f"%{term}%"
         artist_match = (
             select(AlbumArtist.id)
             .join(Artist)
             .where(
                 AlbumArtist.album_id == Album.id,
-                func.lower(Artist.name).like(pattern),
+                func.search_normalize(Artist.name).like(pattern),
             )
             .exists()
         )
-        filters.append(or_(func.lower(Album.title).like(pattern), artist_match))
+        filters.append(or_(func.search_normalize(Album.title).like(pattern), artist_match))
     return filters
 
 
