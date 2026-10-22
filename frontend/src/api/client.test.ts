@@ -59,3 +59,23 @@ describe("authenticated API transport", () => {
     await expect(request("/api/auth/login", { method: "POST", body: '{"password":"synthetic-test-only"}' })).rejects.toEqual(new ApiError("Could not reach Aftertone. Please try again."));
   });
 });
+
+
+describe("field validation context", () => {
+  it("retains only 422 field paths without exposing rejected values", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: [{ loc: ["body", "artists", 1, "name"], msg: "Invalid", input: "private rejected value" }] }), { status: 422 })));
+    try { await request("/api/albums/1", { method: "PATCH", body: "{}" }); }
+    catch (cause) {
+      expect(cause).toBeInstanceOf(ApiError);
+      expect((cause as ApiError).validationPaths).toEqual([["body", "artists", 1, "name"]]);
+      expect((cause as ApiError).message).toBe("The request could not be completed.");
+      expect(JSON.stringify(cause)).not.toContain("private rejected value");
+      return;
+    }
+    throw new Error("Expected validation failure");
+  });
+  it("ignores malformed field paths and keeps generic errors unchanged", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: [null, { loc: "title" }] }), { status: 422 })));
+    await expect(request("/api/albums/1")).rejects.toEqual(new ApiError("The request could not be completed.", 422));
+  });
+});
