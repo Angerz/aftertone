@@ -1,0 +1,67 @@
+/* Transparent wrappers keep the original desktop form and image controls. */
+.edit-artist-page .artist-edit-primary,
+.edit-artist-page .artist-biography,
+.edit-artist-page .artist-biography-fields { display: contents; }
+.edit-artist-page .artist-edit-primary > label { display: grid; gap: .35rem; max-width: 28rem; }
+.edit-artist-page .artist-biography-toggle,
+.edit-artist-page .artist-biography-summary { display: none; }
+.edit-artist-page .artist-image-url[hidden],
+.edit-artist-page .artist-musicbrainz-panel[hidden] { display: none; }
+
+@media (max-width: 700px) {
+  .edit-artist-page form,
+  .edit-artist-page form > *,
+  .edit-artist-page label { min-width: 0; }
+  .edit-artist-page h1 { font-size: clamp(2.2rem, 9vw, 3rem); }
+  .edit-artist-page form { gap: 1.25rem; margin-top: 1.25rem; }
+  .edit-artist-page .artist-edit-section { gap: 1rem; padding-top: .65rem; }
+  .edit-artist-page input,
+  .edit-artist-page select,
+  .edit-artist-page button { min-height: 44px; }
+  .edit-artist-page .cover-upload input { min-height: 0; }
+  .edit-artist-page .artist-edit-photo { align-items: center; column-gap: 1rem; grid-template-columns: 5rem minmax(0, 1fr) 44px; padding-top: 1rem; row-gap: .25rem; }
+  .edit-artist-page .artist-edit-photo > h2 { font-size: 1.2rem; grid-column: 2; grid-row: 1; margin: 0; }
+  .edit-artist-page .artist-edit-image,
+  .edit-artist-page .artist-image-controls,
+  .edit-artist-page .artist-image-actions,
+  .edit-artist-page .artist-url-import { display: contents; }
+  .edit-artist-page .artist-edit-image .artist-hero-image { box-shadow: none; grid-column: 1; grid-row: 1 / span 2; max-width: 5rem; width: 5rem; }
+  .edit-artist-page .artist-image-actions > .cover-upload { align-content: center; grid-column: 2 / -1; grid-row: 2; justify-self: start; min-height: 44px; }
+  .edit-artist-page .artist-url-import > button { align-items: center; display: flex; font: 600 .85rem system-ui, sans-serif; grid-column: 1 / -1; grid-row: 3; justify-content: space-between; margin-top: .35rem; width: 100%; }
+  .edit-artist-page .artist-image-url { background: transparent; border: 0; box-shadow: none; gap: .75rem; grid-column: 1 / -1; grid-row: 4; padding: .5rem 0; position: static; width: auto; }
+  .edit-artist-page .artist-image-url label { font-size: .85rem; }
+  .edit-artist-page .artist-image-url input { font-size: 1rem; }
+  .edit-artist-page .artist-image-url > div { gap: 1rem; }
+  .edit-artist-page .artist-image-controls > .notice { grid-column: 1 / -1; max-width: none; overflow-wrap: anywhere; }
+  .edit-artist-page .artist-image-menu { grid-column: 3; grid-row: 1; justify-self: end; position: relative; }
+  .edit-artist-page .artist-image-menu-trigger { color: #675f58; font: 600 1.5rem/1 system-ui, sans-serif; padding: 0; text-align: center; width: 44px; }
+  .edit-artist-page .artist-image-menu-panel { background: #fffdf8; border: 1px solid #c9c0b4; min-width: 9rem; padding: .25rem; position: absolute; right: 0; top: calc(100% + .25rem); z-index: 3; }
+  .edit-artist-page .artist-image-menu-panel > button { background: transparent; border: 0; color: var(--rating-low); font: 600 .82rem system-ui, sans-serif; padding: .5rem .65rem; text-align: left; width: 100%; }
+  .edit-artist-page .artist-image-menu-panel > button:hover:not(:disabled) { background: #fce9e4; color: var(--rating-low); }
+  .edit-artist-page .artist-edit-section-heading { align-items: center; display: grid; gap: .5rem; grid-template-columns: minmax(0, 1fr) auto; }
+  .edit-artist-page .artist-edit-section-heading h2 { grid-column: 1; grid-row: 1; }
+  .edit-artist-page .artist-musicbrainz-import { display: contents; }
+  .edit-artist-page .artist-musicbrainz-import > button { font: 600 .78rem system-ui, sans-serif; grid-column: 2; grid-row: 1; }
+  .edit-artist-page .artist-musicbrainz-panel { background: transparent; border: 0; border-top: 1px solid #d8d0c5; box-shadow: none; grid-column: 1 / -1; min-width: 0; padding: .85rem 0 .25rem; position: static; width: auto; }
+  .edit-artist-page .artist-musicbrainz-comparison span { min-width: 0; overflow-wrap: anywhere; }
+  .edit-artist-page .artist-musicbrainz-comparison input { height: 1.25rem; min-height: 0; min-width: 1.25rem; }
+  .edit-artist-page .artist-musicbrainz-comparison label { align-items: center; min-height: 44px; }
+  .edit-artist-page .musicbrainz-actions { gap: .5rem; }
+  .edit-artist-page .musicbrainz-actions > button:not(.text-button) { width: auto; }
+  .edit-artist-page .artist-musicbrainz-results { max-height: 18rem; padding: 3px; }
+  .edit-artist-page .artist-musicbrainz-results strong,
+  .edit-artist-page .artist-musicbrainz-results span { overflow-wrap: anywhere; }
+  .edit-artist-page .artist-edit-primary { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .edit-artist-page .artist-edit-primary > label { align-content: start; max-width: none; }
+  .edit-artist-page .artist-edit-name { grid-column: 1 / -1; }
+  .edit-artist-page .artist-edit-country small { order: 2; }
+  .edit-artist-page .artist-biography { border-top: 1px solid #d8d0c5; display: block; min-width: 0; padding-top: .25rem; }
+  .edit-artist-page .artist-biography-toggle { align-items: center; color: #292522; display: flex; font: 600 .88rem system-ui, sans-serif; gap: 1rem; justify-content: space-between; width: 100%; }
+  .edit-artist-page .artist-biography-summary { color: #675f58; display: block; font: .78rem/1.5 system-ui, sans-serif; margin: 0; overflow-wrap: anywhere; }
+  .edit-artist-page .artist-biography-fields { display: none; }
+  .edit-artist-page .artist-biography.expanded .artist-biography-fields { display: block; padding-top: .5rem; }
+  .edit-artist-page [aria-invalid="true"] { border-color: var(--rating-low); }
+  .edit-artist-page .edit-album-actions { border-top: 1px solid #c9c0b4; gap: 1.25rem; margin-top: 0; padding-top: 1rem; }
+  .edit-artist-page button.text-button:hover:not(:disabled),
+  .edit-artist-page .artist-image-menu-trigger:hover:not(:disabled) { background: transparent; color: var(--interactive-link-hover); }
+}
