@@ -6,6 +6,11 @@ body { margin: 0; min-width: 320px; }
 .owner-access { align-items: center; border-bottom: 1px solid #d8d0c5; display: flex; gap: 1rem; justify-content: space-between; margin: 0 auto; max-width: 72rem; padding: 1.1rem 2rem; }
 .owner-access-brand { color: #292522; font-size: 1.3rem; letter-spacing: -.035em; text-decoration: none; }.owner-access-brand:hover { color: var(--interactive-link); }.owner-access-brand:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .owner-access .text-button { font: 500 .8rem system-ui, sans-serif; padding: .5rem 0; }
+.owner-access-brand { align-items: center; display: inline-flex; gap: .55rem; flex-shrink: 0; }
+.brand-mark { display: block; flex: 0 0 auto; height: 1.75rem; width: 1.75rem; }
+.entry-screen-brand { align-items: center; display: flex; gap: .8rem; }
+.entry-screen-brand .brand-mark { height: 2.5rem; width: 2.5rem; }
+@media (max-width: 700px) { .owner-access-brand .brand-mark { height: 1.625rem; width: 1.625rem; }.entry-screen-brand .brand-mark { height: 2.25rem; width: 2.25rem; } }
 .global-header-actions { align-items: center; display: flex; gap: 2rem; margin-left: auto; }
 .global-navigation { align-items: center; display: flex; gap: 1.5rem; }
 .global-navigation a { border-bottom: 2px solid transparent; color: #675f58; font: 500 .82rem/1.5 system-ui, sans-serif; padding: .5rem 0 .4rem; text-decoration: none; white-space: nowrap; }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { activeSection, readRoute } from "../appRoutes";
 import { allowPageNavigation, navigationChangeEvent } from "../navigation";
+import { BrandMark } from "./BrandMark";
 
 const links = [
   { label: "Library", path: "/library", section: "library" },
@@ -44,7 +45,7 @@ export function GlobalHeader({ onNavigate, children }: { onNavigate: (path: stri
   }
 
   return <header className={`owner-access${minimal ? " owner-access-minimal" : ""}`}>
-    <a className="owner-access-brand" href="/" onClick={(event) => follow(event, "/")}>Aftertone</a>
+    <a className="owner-access-brand" href="/" onClick={(event) => follow(event, "/")}>{!minimal && <BrandMark />}<span>Aftertone</span></a>
     <div className="global-header-actions">
       {!minimal && <>
         <button ref={triggerRef} type="button" className="text-button global-nav-toggle" aria-expanded={open} aria-controls="global-navigation" onClick={() => setOpen((value) => !value)}>Menu</button>
