@@ -1,7 +1,9 @@
+import { BrandMark } from "../../components/BrandMark";
+
 export function EntryScreen({ preparing = false, owner = false, onExplore, onSignIn }: { preparing?: boolean; owner?: boolean; onExplore: () => void; onSignIn: () => void }) {
   return <main className="entry-screen" aria-labelledby="entry-title">
     <div className="entry-screen-content">
-      <p className="eyebrow">Aftertone</p>
+      <p className="eyebrow entry-screen-brand"><BrandMark /><span>Aftertone</span></p>
       <h1 id="entry-title">Library<span aria-hidden="true">.</span></h1>
       <p className="entry-screen-description">Your private journal of albums, tracks, and listening sessions.</p>
       <div className="entry-screen-actions">

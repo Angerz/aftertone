@@ -2109,6 +2109,8 @@ _frontend = Path(os.getenv("AFTERTONE_FRONTEND_DIR", "../frontend/dist"))
 if _frontend.is_dir():
     if (_frontend / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=_frontend / "assets"), name="assets")
+    if (_frontend / "branding").is_dir():
+        app.mount("/branding", StaticFiles(directory=_frontend / "branding"), name="branding")
 
     @app.get("/{path:path}", include_in_schema=False)
     def frontend(path: str):
