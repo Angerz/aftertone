@@ -1,0 +1,88 @@
+/* These wrappers preserve the existing desktop layout and textarea presentation. */
+.rating-editor-evaluation, .rating-editor-save, .rating-note-disclosure, .rating-note-panel { display: contents; }
+.rating-editor .rating-editor-mobile, .rating-editor .rating-note-toggle,
+.rating-editor .rating-editor-summary .rating-preview-mobile { display: none; }
+
+@media (max-width: 800px) {
+  .page.rating-editor { display: flex; flex-direction: column; padding: 1rem 1rem 3rem; }
+  .rating-editor .rating-editor-mobile { display: inline; }
+  .rating-editor > .back { align-self: start; min-height: 44px; }
+  .rating-editor .rating-editor-header { align-items: start; gap: .85rem; margin: .25rem 0 1rem; padding-bottom: 1rem; }
+  .rating-editor .editor-cover { flex: 0 0 clamp(4.5rem, 19vw, 5.5rem); max-width: 5.5rem; }
+  .rating-editor .rating-editor-identity { flex: 1; }
+  .rating-editor .rating-editor-identity .eyebrow { font-size: .62rem; margin-bottom: .3rem; }
+  .rating-editor .rating-editor-identity h1 { font-size: clamp(1.55rem, 6vw, 2.25rem); line-height: 1.04; }
+  .rating-editor .rating-editor-metadata { font-size: .78rem; line-height: 1.4; }
+  .rating-editor .rating-session-meta { font-size: .72rem; line-height: 1.4; }
+  .rating-editor .rate-again { align-items: center; flex-direction: row; gap: .75rem; margin-bottom: .8rem; padding: .65rem 0; }
+  .rating-editor .rate-again .eyebrow { font-size: .62rem; margin-bottom: .25rem; }
+  .rating-editor .rate-again p:last-child { font: .75rem/1.4 system-ui, sans-serif; }
+  .rating-editor .rate-again button { background: transparent; border-color: #b8afa3; color: var(--interactive-link); font: 650 .75rem/1.35 system-ui, sans-serif; max-width: 10rem; min-height: 44px; padding: .4rem .6rem; }
+  .rating-editor .rate-again button:hover:not(:disabled) { background: var(--control-muted-bg); color: var(--interactive-link-hover); }
+  .rating-editor .draft-source { background: transparent; border-left: 0; border-bottom: 1px solid #d8d0c5; font-size: .78rem; line-height: 1.5; margin: 0 0 1rem; padding: 0 0 .5rem; }
+  .rating-editor .draft-source button { min-height: 44px; }
+  .rating-editor .editor-layout, .rating-editor .album-assessment { display: contents; }
+  .rating-editor .rating-editor-tracks > h2 { font-size: 1.25rem; margin: .25rem 0 .3rem; }
+  .rating-editor .rating-disc + .rating-disc { margin-top: 1.15rem; }
+  .rating-editor .rating-disc > h3 { font-size: .7rem; margin-bottom: .2rem; padding-bottom: .4rem; }
+
+  .rating-editor .rating-track { column-gap: .65rem; display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; padding: .8rem 0 .4rem; row-gap: .45rem; }
+  .rating-editor .rating-track-heading { display: contents; }
+  .rating-editor .rating-track-heading > span:first-child { grid-column: 1; grid-row: 1; padding-top: .18rem; }
+  .rating-editor .rating-track-heading .rating-track-title { color: #292522; font: 600 1.05rem/1.3 ui-serif, Georgia, serif; grid-column: 2 / -1; grid-row: 1; padding-top: 0; }
+  .rating-editor .rating-track-include { align-self: start; font-size: .76rem; gap: .25rem; grid-column: 3; grid-row: 2; margin: 1.3rem 0 0; min-height: 44px; padding: 0; }
+  .rating-editor .rating-track-include input { accent-color: var(--interactive-link); margin: 0 .2rem 0 0; }
+  .rating-editor .rating-track-details { display: none; transition: none; }
+  .rating-editor .rating-track-details.expanded, .rating-editor .rating-track-details.expanded > div { display: contents; opacity: 1; }
+  .rating-editor .rating-controls { display: block; grid-column: 2; grid-row: 2; margin: 0; }
+  .rating-editor .rating-score-field { font-size: .74rem; gap: .25rem; max-width: 6rem; }
+  .rating-editor .rating-score-field input { font-size: 1rem; font-variant-numeric: tabular-nums; min-height: 44px; min-width: 0; width: 100%; }
+  .rating-editor .rating-track-excluded { grid-column: 2 / -1; grid-row: 3; line-height: 1.4; margin: 0 0 .35rem; }
+  .rating-editor .rating-track.excluded:not(.has-visible-details) .rating-track-include { grid-column: 2 / -1; justify-self: start; margin-top: 0; }
+  .rating-editor .rating-note-disclosure { display: block; grid-column: 2 / -1; grid-row: 3; min-width: 0; }
+  .rating-editor .rating-track.excluded .rating-note-disclosure { grid-row: 4; }
+  .rating-editor .rating-note-toggle { align-items: center; display: inline-flex; font: 500 .76rem system-ui, sans-serif; min-height: 44px; padding: .35rem 0; }
+  .rating-editor .rating-note-toggle:hover:not(:disabled) { background: transparent; color: var(--interactive-link-hover); }
+  .rating-editor .rating-note-indicator { color: #675f58; margin-left: .25rem; }
+  .rating-editor .rating-note-panel { display: none; }
+  .rating-editor .rating-note-panel.open { display: block; padding: .1rem 0 .6rem; }
+  .rating-editor .rating-track-notes { font-size: .74rem; }
+  .rating-editor .rating-track-notes textarea { font-size: 1rem; min-height: 5rem; }
+  .rating-editor input, .rating-editor textarea { scroll-margin-block: 5rem; }
+
+  /* Keep evaluation, calculated feedback and Save together on small screens. */
+  .rating-editor .rating-editor-evaluation { border-top: 1px solid #c9c0b4; display: grid; gap: .85rem; margin-top: 1.5rem; order: 1; padding-top: 1rem; }
+  .rating-editor .rating-editor-evaluation h2 { font-size: 1.25rem; margin-bottom: .15rem; }
+  .rating-editor .assessment-grid { gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rating-editor .rating-editor-evaluation label { font-size: .78rem; min-width: 0; }
+  .rating-editor .rating-editor-evaluation input { font-size: 1rem; min-height: 44px; }
+  .rating-editor .rating-editor-evaluation textarea { font-size: 1rem; min-height: 5.5rem; }
+  .rating-editor .rating-editor-evaluation .long-notes { min-height: 8rem; }
+  .rating-editor .rating-editor-evaluation textarea[rows="4"] { height: 5.5rem; }
+  .rating-editor .rating-editor-evaluation textarea[rows="8"] { height: 8rem; }
+  .rating-editor .rating-editor-summary { background: transparent; border-top: 1px solid #c9c0b4; margin-top: 1.5rem; order: 2; padding: 1rem 0 0; position: static; }
+  .rating-editor .rating-editor-summary .rating-preview-mobile { display: inline; }
+  .rating-editor-summary .rating-preview-desktop { display: none; }
+  .rating-editor .rating-editor-summary .summary-date { font-size: .72rem; max-width: 24rem; }
+  .rating-editor .rating-editor-summary dl > div { align-items: baseline; border-color: #d8d0c5; column-gap: 1rem; display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, max-content) minmax(4rem, max-content); padding: .55rem 0; }
+  .rating-editor .rating-editor-summary dt { font-size: .65rem; letter-spacing: .04em; }
+  .rating-editor .rating-editor-summary dd { font-size: .82rem; text-align: right; }
+  .rating-editor .rating-editor-summary dl > .rating-preview-columns { border: 0; color: #675f58; display: grid; font: 650 .62rem system-ui, sans-serif; padding-top: 0; text-transform: uppercase; }
+  .rating-editor .rating-preview-columns dt, .rating-editor .rating-preview-columns dd { font: inherit; }
+  .rating-editor .rating-editor-summary .final { border-top: 1px solid #c9c0b4; grid-template-columns: minmax(0, 1fr) auto; margin-top: .2rem; padding: .75rem 0; }
+  .rating-editor .rating-editor-summary .final dt { max-width: none; }
+  .rating-editor .rating-editor-summary .final dd { font-size: 1.8rem; }
+  .rating-editor .rating-editor-summary.rating-high .final dd { color: var(--rating-high); }
+  .rating-editor .rating-editor-summary.rating-mid .final dd { color: var(--rating-mid); }
+  .rating-editor .rating-editor-summary.rating-low .final dd { color: var(--rating-low); }
+  .rating-editor .rating-editor-save { display: grid; gap: .5rem; order: 3; padding-top: .75rem; }
+  .rating-editor .rating-editor-save > button { min-height: 48px; }
+  .rating-editor .rating-editor-save .notice { font-size: .8rem; line-height: 1.5; margin: 0 0 .5rem; }
+  .rating-editor .rating-history { margin-top: 2rem; max-width: none; order: 4; }
+  .rating-editor .rating-draft-recovery-dialog { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+  .rating-editor .rating-draft-recovery-actions button { min-height: 44px; }
+}
+
+@media (max-width: 800px) and (prefers-reduced-motion: reduce) {
+  .rating-editor button { transition: none; }
+}
