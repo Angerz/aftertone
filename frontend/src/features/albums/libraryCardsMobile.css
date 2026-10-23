@@ -1,0 +1,50 @@
+@media (max-width: 700px) {
+  .library-page .album-grid {
+    align-items: start;
+    gap: .9rem .65rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .library-page .album-grid > li { min-width: 0; }
+  .library-page .album-card { grid-template-columns: minmax(0, 1fr); }
+  .library-page .album-card > .album-cover { font-size: 1.75rem; }
+  .library-page .album-card-copy { gap: .2rem; padding: .45rem 0 .3rem; }
+  .library-page .album-card-copy > strong {
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    font-size: .9375rem;
+    font-weight: 600;
+    height: 2.4em;
+    line-height: 1.2;
+    min-width: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .library-page .album-card-copy > span {
+    display: block;
+    font-size: .75rem;
+    line-height: 1.35;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .library-page .album-card-copy > small { display: none; }
+  .library-page .library-rating-bar { height: .25rem; }
+  .library-page .album-rating {
+    border: 0;
+    font-size: .95rem;
+    gap: .35rem;
+    line-height: 1.25;
+    margin: 0;
+    min-height: 1.25rem;
+    padding: 0;
+  }
+  .library-page .album-rating b { align-items: baseline; display: inline-flex; gap: .3rem; margin: 0; }
+  .library-page .album-rating.unrated { font-size: .7rem; }
+  .library-page .album-rating.unrated b { font-weight: 500; }
+  .library-page .album-rating[data-rating-tier="high"] b { color: var(--rating-high); }
+  .library-page .album-rating[data-rating-tier="mid"] b { color: var(--rating-mid); }
+  .library-page .album-rating[data-rating-tier="low"] b { color: var(--rating-low); }
+  .library-page .album-rating b > small { color: #766d64; font-size: .65rem; }
+}

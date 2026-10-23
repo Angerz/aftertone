@@ -12,7 +12,7 @@ describe("AlbumCard revisit indicator", () => {
     expect(markup).toContain('data-testid="revisit-indicator"');
     expect(markup).toContain("Revisit");
     expect(markup).toContain("Listen again without hype.");
-    expect(markup).toContain('aria-label="Open Album, marked for revisit: listen again without hype."');
+    expect(markup).toContain('aria-label="Open Album by Artist, marked for revisit: listen again without hype."');
     expect(markup).toContain("<button");
   });
 
@@ -26,5 +26,25 @@ describe("AlbumCard revisit indicator", () => {
     const markup = card(album({ needs_revisit: true }));
     expect(markup).toContain("Marked for revisit");
     expect(markup).not.toContain("<span></span>");
+  });
+});
+
+describe("AlbumCard compact presentation", () => {
+  it("keeps complete titles and every artist in the accessible navigation label", () => {
+    const title = "Songs for the Places We Have Not Yet Learned to Leave";
+    const markup = card(album({ title, artists: [{ id: 1, name: "The Orchestra of Extraordinary and Unexpectedly Long Artist Names" }, { id: 2, name: "Luna Sol" }] }));
+    expect(markup).toContain(`aria-label="Open ${title} by The Orchestra of Extraordinary and Unexpectedly Long Artist Names &amp; Luna Sol"`);
+  });
+
+  it("distinguishes a zero rating from a project without a rating", () => {
+    const zero = card(album({ latest_revision: { id: 1, created_at: "2026-01-01", pre_rating: 0, final_rating: 0 } }));
+    expect(zero).toContain('data-rating-tier="low"');
+    expect(zero).toContain('<b title="0.000">0</b>');
+    expect(zero).not.toContain("Not rated");
+    const unrated = card(album());
+    expect(unrated).toContain('class="album-rating unrated"');
+    expect(unrated).toContain('data-rating-tier="unrated"');
+    expect(unrated).toContain("Not rated");
+    expect(unrated).not.toContain('title="0.000"');
   });
 });
