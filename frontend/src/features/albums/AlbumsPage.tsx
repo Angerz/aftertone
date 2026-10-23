@@ -8,6 +8,7 @@ import { defaultLibrarySortDirection, type LibrarySort, type LibrarySortDirectio
 import { buildAlbumQueryParams, parseLibraryNavigation, type LibraryNavigation } from "./pagination";
 import { shouldShowLibraryRatingSummary } from "./libraryRatingSummary";
 import { LibraryControls } from "./LibraryControls";
+import "./libraryCardsMobile.css";
 
 const libraryPageSize = 25;
 
