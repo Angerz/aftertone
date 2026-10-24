@@ -1,0 +1,5 @@
+.track-artist-credits { color: #675f58; overflow-wrap: anywhere; }
+.track-artist-credits .artist-link { background: transparent; color: var(--interactive-link); font: inherit; max-width: 100%; overflow-wrap: anywhere; padding: 0; text-align: left; vertical-align: baseline; white-space: normal; }
+.track-artist-credits .artist-link:visited { color: var(--interactive-link); }
+.track-artist-credits .artist-link:hover { background: transparent; color: var(--interactive-link-hover); }
+.track-artist-credits .artist-link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

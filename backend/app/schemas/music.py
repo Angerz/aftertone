@@ -171,8 +171,14 @@ class ArtistAlbumResponse(APIModel):
     rating: Decimal | None = None
 
 
-class TrackAppearanceResponse(APIModel):
-    _public_fields = frozenset(
+class TrackArtistCreditsResponse(APIModel):
+    _public_fields = frozenset({"primary_artists", "featured_artists"})
+    primary_artists: list[ArtistResponse] = Field(default_factory=list)
+    featured_artists: list[ArtistResponse] = Field(default_factory=list)
+
+
+class TrackAppearanceResponse(TrackArtistCreditsResponse):
+    _public_fields = TrackArtistCreditsResponse._public_fields | frozenset(
         {
             "track_id",
             "track_title",
@@ -198,8 +204,8 @@ class TrackAppearanceResponse(APIModel):
     role: str
 
 
-class ArtistTrackResponse(APIModel):
-    _public_fields = frozenset(
+class ArtistTrackResponse(TrackArtistCreditsResponse):
+    _public_fields = TrackArtistCreditsResponse._public_fields | frozenset(
         {
             "track_id",
             "title",
@@ -277,6 +283,7 @@ class MusicBrainzTrackPreview(APIModel):
     position: int = Field(ge=1)
     title: str = Field(min_length=1, max_length=300)
     primary_artists: list[str] = Field(default_factory=list)
+    featured_artists: list[str] = Field(default_factory=list)
 
 
 class MusicBrainzReleasePreview(APIModel):
@@ -453,6 +460,7 @@ class FavoriteSongEntryResponse(APIModel):
             "track_id",
             "track_title",
             "artists",
+            "featured_artists",
             "album_id",
             "album_title",
             "album_year",
@@ -476,6 +484,7 @@ class FavoriteSongEntryResponse(APIModel):
     track_id: int
     track_title: str
     artists: list[ArtistResponse]
+    featured_artists: list[ArtistResponse] = Field(default_factory=list)
     album_id: int
     album_title: str
     album_year: int | None
@@ -498,6 +507,7 @@ class FavoriteSongTrackSearchResponse(APIModel):
     track_id: int
     track_title: str
     artists: list[ArtistResponse]
+    featured_artists: list[ArtistResponse] = Field(default_factory=list)
     album_id: int
     album_title: str
     album_year: int | None

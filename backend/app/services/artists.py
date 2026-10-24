@@ -10,6 +10,19 @@ def normalize_artist_name(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
+def effective_track_artists(track: Track) -> tuple[list[Artist], list[Artist]]:
+    """Resolve current catalogue credits without changing stored relationships."""
+    credits = sorted(track.artist_credits, key=lambda credit: credit.position)
+    primary = [credit.artist for credit in credits if credit.role == TrackArtistRole.PRIMARY]
+    if not primary:
+        primary = [
+            credit.artist
+            for credit in sorted(track.album.artist_credits, key=lambda credit: credit.position)
+        ]
+    featured = [credit.artist for credit in credits if credit.role == TrackArtistRole.FEATURED]
+    return primary, featured
+
+
 def get_or_create_artist(session: Session, name: str) -> Artist:
     visible = " ".join(name.split())
     if not visible:
