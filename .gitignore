@@ -3,6 +3,10 @@ backend/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.egg
+.eggs/
+*.egg-info/
+.ruff_cache/
 
 # Node
 frontend/node_modules/
@@ -11,6 +15,9 @@ frontend/tsconfig.tsbuildinfo
 
 # Environment
 .env
+.env.*
+!.env.example
+!.env.production.example
 
 # SQLite
 *.db
@@ -43,11 +50,6 @@ frontend_template/
 
 *.xd
 
-# Local credentials, exports and production backup archives
-.env.*
-!.env.example
-!.env.production.example
+# Local exports and production backup archives
 *.tar.gz
 /backups/
-*.egg-info/
-.ruff_cache/
