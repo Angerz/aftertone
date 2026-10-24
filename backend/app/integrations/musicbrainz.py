@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.models.music import ReleaseType
+from app.services.artists import normalize_artist_name
 
 MUSICBRAINZ_URL = "https://musicbrainz.org/ws/2"
 _request_lock = threading.Lock()
@@ -81,6 +82,35 @@ def _artist_names(credits: list[dict[str, Any]] | None) -> list[str]:
         for item in credits or []
         if str(item.get("name") or item.get("artist", {}).get("name", "")).strip()
     ]
+
+
+def _track_artist_names(credits: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    """Use explicit source joins only; never infer roles from names or titles."""
+    primary: list[str] = []
+    featured: list[str] = []
+    featuring = False
+    for item in credits:
+        names = _artist_names([item])
+        if names:
+            (featured if featuring else primary).append(names[0])
+        if str(item.get("joinphrase", "")).strip().casefold().rstrip(".") in {
+            "feat",
+            "ft",
+            "featuring",
+        }:
+            featuring = True
+    seen: set[str] = set()
+
+    def unique(names: list[str]) -> list[str]:
+        result = []
+        for name in names:
+            key = normalize_artist_name(name)
+            if key not in seen:
+                seen.add(key)
+                result.append(name)
+        return result
+
+    return unique(primary), unique(featured)
 
 
 def _year(date: str | None) -> int | None:
@@ -218,8 +248,10 @@ def release_preview(release_id: str, client: httpx.Client | None = None) -> dict
     album_artists = _artist_names(payload.get("artist-credit"))
     for disc_number, medium in enumerate(media, start=1):
         for fallback_position, track in enumerate(medium.get("tracks") or [], start=1):
-            track_artists = _artist_names(
-                track.get("artist-credit") or (track.get("recording") or {}).get("artist-credit")
+            track_artists, featured_artists = _track_artist_names(
+                track.get("artist-credit")
+                or (track.get("recording") or {}).get("artist-credit")
+                or []
             )
             tracks.append(
                 {
@@ -229,6 +261,7 @@ def release_preview(release_id: str, client: httpx.Client | None = None) -> dict
                     or (track.get("recording") or {}).get("title")
                     or "Untitled",
                     "primary_artists": track_artists if track_artists != album_artists else [],
+                    "featured_artists": featured_artists,
                 }
             )
     if not tracks:

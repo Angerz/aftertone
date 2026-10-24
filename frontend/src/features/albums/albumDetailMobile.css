@@ -1,6 +1,8 @@
 .album-page .album-track-pre-status, .momentum-mobile-hint, .momentum-mobile-detail { display: none; }
 .album-page .album-page-heading, .album-page .album-page-context { display: contents; }
 .album-page .album-final-score-label { display: none; }
+.album-page .album-page-artist { overflow-wrap: anywhere; }
+.album-page .album-page-artist .artist-link { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
 
 @media (max-width: 1024px) {
   .page.album-page, .page.album-revision-detail { padding-top: 1.8rem; }

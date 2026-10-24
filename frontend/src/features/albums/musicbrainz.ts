@@ -5,7 +5,7 @@ export function musicBrainzImportPayload(preview: MusicBrainzReleasePreview): Mu
     musicbrainz_release_id: preview.musicbrainz_release_id, title: preview.title.trim(), year: preview.year, release_date: preview.release_date,
     release_type: preview.release_type, disc_count: preview.disc_count, cover_url: preview.cover_url,
     artists: preview.artists.map((name) => ({ name })),
-    tracks: preview.tracks.map((track) => ({ ...track, title: track.title.trim(), primary_artists: track.primary_artists.filter(Boolean) })),
+    tracks: preview.tracks.map((track) => ({ ...track, title: track.title.trim(), primary_artists: track.primary_artists.filter(Boolean), featured_artists: track.featured_artists?.filter(Boolean) ?? [] })),
   };
 }
 

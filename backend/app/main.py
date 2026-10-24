@@ -92,6 +92,7 @@ from app.schemas.music import (
 from app.security import SecurityMiddleware
 from app.services.artists import (
     artist_ids_from_inputs,
+    effective_track_artists,
     get_or_create_artist,
     normalize_artist_name,
     set_album_artists,
@@ -138,6 +139,17 @@ def get_session() -> Generator[Session]:
         session.close()
 
 
+def track_artist_responses(track: Track) -> dict[str, list[ArtistResponse]]:
+    primary, featured = effective_track_artists(track)
+    return {
+        key: [
+            ArtistResponse(id=artist.id, name=artist.name, is_active=artist.is_active)
+            for artist in artists
+        ]
+        for key, artists in (("primary_artists", primary), ("featured_artists", featured))
+    }
+
+
 def album_response(
     album: Album,
     latest_revision: RatingRevision | None = None,
@@ -152,31 +164,15 @@ def album_response(
     ]
 
     def track_response(track: Track) -> TrackResponse:
-        track_credits = sorted(
-            track.artist_credits, key=lambda credit: (credit.role.value, credit.position)
+        explicit_primary = any(
+            credit.role == TrackArtistRole.PRIMARY for credit in track.artist_credits
         )
-        explicit_primary = [
-            ArtistResponse(
-                id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active
-            )
-            for credit in track_credits
-            if credit.role == TrackArtistRole.PRIMARY
-        ]
-        primary = explicit_primary or artists
-        featured = [
-            ArtistResponse(
-                id=credit.artist.id, name=credit.artist.name, is_active=credit.artist.is_active
-            )
-            for credit in track_credits
-            if credit.role == TrackArtistRole.FEATURED
-        ]
         return TrackResponse(
             id=track.id,
             disc_number=track.disc_number,
             position=track.position,
             title=track.title,
-            primary_artists=primary,
-            featured_artists=featured,
+            **track_artist_responses(track),
             uses_album_artists=not explicit_primary,
         )
 
@@ -421,13 +417,21 @@ def import_musicbrainz_release(
         album_artist_ids = artist_ids_from_inputs(session, payload.artists)
         set_album_artists(session, album, album_artist_ids)
         for track, imported_track in zip(album.tracks, payload.tracks, strict=True):
-            if imported_track.primary_artists:
+            if imported_track.primary_artists or imported_track.featured_artists:
                 primary_ids = artist_ids_from_inputs(
                     session,
                     [ArtistCreditInput(name=name) for name in imported_track.primary_artists],
                 )
-                if primary_ids != album_artist_ids:
-                    set_track_artists(session, track, primary_ids, [])
+                featured_ids = artist_ids_from_inputs(
+                    session,
+                    [ArtistCreditInput(name=name) for name in imported_track.featured_artists],
+                )
+                set_track_artists(
+                    session,
+                    track,
+                    [] if primary_ids == album_artist_ids else primary_ids,
+                    featured_ids,
+                )
         if payload.cover_url:
             try:
                 cover_filename = download_cover_from_url(payload.cover_url)
@@ -1096,6 +1100,15 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
             .selectinload(Track.album)
             .selectinload(Album.revisions)
             .selectinload(RatingRevision.track_ratings),
+            selectinload(Artist.track_credits)
+            .selectinload(TrackArtist.track)
+            .selectinload(Track.artist_credits)
+            .selectinload(TrackArtist.artist),
+            selectinload(Artist.track_credits)
+            .selectinload(TrackArtist.track)
+            .selectinload(Track.album)
+            .selectinload(Album.artist_credits)
+            .selectinload(AlbumArtist.artist),
         )
         .where(Artist.id == artist_id)
     )
@@ -1143,6 +1156,7 @@ def get_artist(artist_id: int, session: Session = Depends(get_session)) -> Artis
         ],
         featured_appearances=[
             TrackAppearanceResponse(
+                **track_artist_responses(credit.track),
                 track_id=credit.track.id,
                 track_title=credit.track.title,
                 track_position=credit.track.position,
@@ -1300,6 +1314,12 @@ def list_artist_tracks(
     rows = session.execute(
         select(Track, Album, track_score)
         .join(Album)
+        .options(
+            selectinload(Track.artist_credits).selectinload(TrackArtist.artist),
+            selectinload(Track.album)
+            .selectinload(Album.artist_credits)
+            .selectinload(AlbumArtist.artist),
+        )
         .where(*filters)
         .order_by(*ordering)
         .offset((page - 1) * page_size)
@@ -1308,6 +1328,7 @@ def list_artist_tracks(
     return PaginatedResponse(
         items=[
             ArtistTrackResponse(
+                **track_artist_responses(track),
                 track_id=track.id,
                 title=track.title,
                 disc_number=track.disc_number,
@@ -1496,19 +1517,7 @@ def favorite_song_movement(
 
 
 def favorite_song_artists(track: Track) -> list[ArtistResponse]:
-    primary = [
-        credit.artist
-        for credit in sorted(track.artist_credits, key=lambda credit: credit.position)
-        if credit.role == TrackArtistRole.PRIMARY
-    ]
-    artists = primary or [
-        credit.artist
-        for credit in sorted(track.album.artist_credits, key=lambda credit: credit.position)
-    ]
-    return [
-        ArtistResponse(id=artist.id, name=artist.name, is_active=artist.is_active)
-        for artist in artists
-    ]
+    return track_artist_responses(track)["primary_artists"]
 
 
 def favorite_song_response(entry: FavoriteSongEntry, position: int) -> FavoriteSongEntryResponse:
@@ -1520,6 +1529,7 @@ def favorite_song_response(entry: FavoriteSongEntry, position: int) -> FavoriteS
         track_id=track.id,
         track_title=track.title,
         artists=favorite_song_artists(track),
+        featured_artists=track_artist_responses(track)["featured_artists"],
         album_id=album.id,
         album_title=album.title,
         album_year=album.release_year,
@@ -1718,6 +1728,7 @@ def search_tracks(
                 track_id=track.id,
                 track_title=track.title,
                 artists=favorite_song_artists(track),
+                featured_artists=track_artist_responses(track)["featured_artists"],
                 album_id=track.album.id,
                 album_title=track.album.title,
                 album_year=track.album.release_year,

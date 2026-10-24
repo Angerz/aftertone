@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.integrations import musicbrainz
 from app.models.music import ReleaseType
 
@@ -34,6 +36,73 @@ class RetryingClient:
     def get(self, *_args, **_kwargs):
         self.calls += 1
         return Response({"releases": []}, status_code=503 if self.calls == 1 else 200)
+
+
+@pytest.mark.parametrize("join", [" feat. ", " ft. ", " featuring "])
+def test_track_preview_preserves_explicit_primary_and_featured_roles(join, monkeypatch):
+    monkeypatch.setattr(musicbrainz, "_last_request_at", 0.0)
+    payload = {
+        "id": "synthetic-release",
+        "title": "Compilation",
+        "artist-credit": [{"name": "Various Artists"}],
+        "media": [
+            {
+                "tracks": [
+                    {
+                        "position": 1,
+                        "title": "Independent title",
+                        "artist-credit": [
+                            {"name": "A", "joinphrase": " & "},
+                            {"name": "B", "joinphrase": join},
+                            {"name": "C", "joinphrase": " & "},
+                            {"name": "D"},
+                        ],
+                        "recording": {"artist-credit": [{"name": "Not the track credit"}]},
+                    }
+                ]
+            }
+        ],
+    }
+    track = musicbrainz.release_preview("synthetic-release", Client(payload))["tracks"][0]
+    assert track["primary_artists"] == ["A", "B"]
+    assert track["featured_artists"] == ["C", "D"]
+    assert track["title"] == "Independent title"
+
+
+def test_recording_fallback_and_ambiguous_joins_do_not_guess_featured_roles(monkeypatch):
+    monkeypatch.setattr(musicbrainz, "_last_request_at", 0.0)
+    payload = {
+        "id": "synthetic-release",
+        "artist-credit": [{"name": "A"}],
+        "media": [
+            {
+                "tracks": [
+                    {
+                        "title": "A feat. B is just a title",
+                        "recording": {
+                            "artist-credit": [
+                                {"name": "A", "joinphrase": " with "},
+                                {"name": "B"},
+                            ]
+                        },
+                    },
+                    {"title": "Inherited"},
+                    {
+                        "title": "Guests only differ",
+                        "artist-credit": [
+                            {"name": "A", "joinphrase": " feat. "},
+                            {"name": "Guest"},
+                        ],
+                    },
+                ]
+            }
+        ],
+    }
+    tracks = musicbrainz.release_preview("synthetic-release", Client(payload))["tracks"]
+    assert tracks[0]["primary_artists"] == ["A", "B"]
+    assert tracks[0]["featured_artists"] == []
+    assert tracks[1]["primary_artists"] == [] and tracks[1]["featured_artists"] == []
+    assert tracks[2]["primary_artists"] == [] and tracks[2]["featured_artists"] == ["Guest"]
 
 
 def test_search_and_multi_disc_preview_are_normalized(monkeypatch) -> None:
