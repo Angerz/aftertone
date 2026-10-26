@@ -10,7 +10,7 @@ import { shouldShowLibraryRatingSummary } from "./libraryRatingSummary";
 import { LibraryControls } from "./LibraryControls";
 import "./libraryCardsMobile.css";
 
-const libraryPageSize = 25;
+const libraryPageSize = 30;
 
 function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
   if (totalPages <= 1) return null;
