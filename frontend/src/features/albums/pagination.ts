@@ -1,4 +1,5 @@
 import type { AlbumListParams } from "../../api/albums";
+import { initialAftertoneState, nextAftertoneState } from "../../navigation";
 import { defaultLibrarySortDirection, type LibrarySort, type LibrarySortDirection } from "./library";
 
 export type LibraryNavigation = Required<Pick<AlbumListParams, "page" | "sort" | "direction" | "revisit" | "unrated">> & Pick<AlbumListParams, "search" | "year" | "month" | "decade">;
@@ -25,4 +26,22 @@ export function buildAlbumQueryParams(navigation: LibraryNavigation): URLSearchP
   if (navigation.sort !== "rating") params.set("sort", navigation.sort);
   if (navigation.direction !== defaultLibrarySortDirection(navigation.sort)) params.set("direction", navigation.direction);
   return params;
+}
+
+interface LibraryHistoryTarget {
+  location: Pick<Location, "pathname" | "search" | "hash">;
+  history: Pick<History, "state" | "pushState" | "replaceState">;
+}
+
+/** Explicit page/sort navigation pushes; automatic URL synchronization replaces. */
+export function writeLibraryNavigation(navigation: LibraryNavigation, mode: "push" | "replace", target: LibraryHistoryTarget = window): boolean {
+  const params = new URLSearchParams(target.location.search);
+  // Normalize only Library's own keys; keep unrelated query parameters intact.
+  for (const key of ["page", "search", "decade", "year", "month", "revisit", "unrated", "sort", "direction"]) params.delete(key);
+  buildAlbumQueryParams(navigation).forEach((value, key) => params.set(key, value));
+  const path = `${target.location.pathname}${params.size ? `?${params}` : ""}${target.location.hash}`;
+  const current = `${target.location.pathname}${target.location.search}${target.location.hash}`;
+  if (mode === "push" && path === current) return false;
+  target.history[mode === "push" ? "pushState" : "replaceState"](mode === "push" ? nextAftertoneState(target.history.state) : initialAftertoneState(target.history.state), "", path);
+  return true;
 }
