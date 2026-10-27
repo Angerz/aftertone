@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { activeSection, readRoute, requiresOwner, routePath } from "./appRoutes";
 
 describe("public entry and owner routes", () => {
+  it("reads and generates stable, public revision URLs in the Library section", () => {
+    for (const revisionId of [7, 42]) {
+      const view = { name: "revision" as const, albumId: 3, revisionId };
+      expect(readRoute(`/albums/3/revisions/${revisionId}`)).toEqual(view);
+      expect(routePath(view)).toBe(`/albums/3/revisions/${revisionId}`);
+      expect(requiresOwner(view)).toBe(false);
+      expect(activeSection(view)).toBe("library");
+    }
+  });
+  it.each(["0", "-1", "abc", "1.5", "1e2", "9007199254740992"])("keeps invalid revision %s on an album-associated error route", (id) => {
+    expect(readRoute(`/albums/3/revisions/${id}`)).toEqual({ name: "revision", albumId: 3, revisionId: 0 });
+  });
   it("assigns details and editors to their global section while leaving the landing minimal", () => {
     expect(activeSection(readRoute("/"))).toBeNull();
     for (const path of ["/library", "/albums/1", "/albums/1/edit", "/albums/1/rate"]) expect(activeSection(readRoute(path))).toBe("library");

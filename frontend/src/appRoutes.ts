@@ -1,4 +1,4 @@
-export type View = { name: "landing" } | { name: "albums" } | { name: "top-songs" } | { name: "artists" } | { name: "artist"; artistId: number } | { name: "artist-tracks"; artistId: number } | { name: "artist-edit"; artistId: number } | { name: "create" } | { name: "import" } | { name: "album"; albumId: number } | { name: "edit"; albumId: number } | { name: "rate"; albumId: number } | { name: "reconcile"; albumId: number };
+export type View = { name: "landing" } | { name: "albums" } | { name: "top-songs" } | { name: "artists" } | { name: "artist"; artistId: number } | { name: "artist-tracks"; artistId: number } | { name: "artist-edit"; artistId: number } | { name: "create" } | { name: "import" } | { name: "album"; albumId: number } | { name: "revision"; albumId: number; revisionId: number } | { name: "edit"; albumId: number } | { name: "rate"; albumId: number } | { name: "reconcile"; albumId: number };
 
 export function requiresOwner(view: View): boolean {
   return ["create", "import", "artist-edit", "reconcile", "edit", "rate"].includes(view.name);
@@ -16,6 +16,11 @@ export function legacyLibraryQuery(search: string): boolean {
 }
 
 export function readRoute(path: string, search = ""): View {
+  const revision = path.match(/^\/albums\/(\d+)\/revisions\/([^/]+)$/);
+  if (revision) {
+    const id = Number(revision[2]);
+    return { name: "revision", albumId: Number(revision[1]), revisionId: /^\d+$/.test(revision[2]) && Number.isSafeInteger(id) && id > 0 ? id : 0 };
+  }
   const artist = path.match(/^\/artists\/(\d+)(?:\/(edit|tracks))?$/);
   if (artist) return { name: artist[2] === "edit" ? "artist-edit" : artist[2] === "tracks" ? "artist-tracks" : "artist", artistId: Number(artist[1]) };
   const album = path.match(/^\/albums\/(\d+)(?:\/(edit|rate|reconcile))?$/);
@@ -40,6 +45,7 @@ export function routePath(view: View): string {
     case "create": return "/albums/new";
     case "import": return "/import";
     case "album": return `/albums/${view.albumId}`;
+    case "revision": return `/albums/${view.albumId}/revisions/${view.revisionId}`;
     case "edit": return `/albums/${view.albumId}/edit`;
     case "rate": return `/albums/${view.albumId}/rate`;
     case "reconcile": return `/albums/${view.albumId}/reconcile`;
